@@ -1,0 +1,11 @@
+[package]
+name = "complexpr"
+version = "0.1.0"
+authors = ["trimill"]
+edition = "2018"
+license = "GPL-3"
+
+[dependencies]
+num = "0.3"
+regex = "1.4"
+lazy_static="1.4"
