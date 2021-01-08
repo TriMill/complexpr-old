@@ -1,13 +1,26 @@
 use crate::Value;
 use crate::ops::*;
 use crate::token::*;
-use crate::function::FunctionError;
+use crate::function::{self, EvalError, EvalErrorKind, EvalTrace};
 
 pub type Context = std::collections::HashMap<String, Value>;
 
 #[derive(Clone, Debug)]
 pub enum TreeError {
     NoLParen, NoRParen, TokenNoArgs(Token), AssignLeftInvalid, ColonLeftNotIdentifier(Node), NoOperator(Token)
+}
+
+impl std::fmt::Display for TreeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::NoLParen => write!(f, "Unmatched closing parenthesis ')'"),
+            Self::NoRParen => write!(f, "Unmatched opening parenthesis '('"),
+            Self::TokenNoArgs(t) => write!(f, "Token {:?} is missing one or both arguments", t),
+            Self::AssignLeftInvalid => write!(f, "Can only assign to an identifier"),
+            Self::ColonLeftNotIdentifier(_) => write!(f, "Left-hand side of colon must be an identifier or a list of identifiers"),
+            Self::NoOperator(t) => write!(f, "Token {:?} has no corresponding operator", t)
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -23,14 +36,20 @@ pub enum Node {
 }
 
 impl Node {
-    pub fn eval(&self, ctx: &mut Context) -> Result<Value, FunctionError> {
+    pub fn eval(&self, ctx: &mut Context) -> Result<Value, EvalError> {
         match self {
             Self::Assign(name, value) => {
+                if name == "true" || name == "false" || name.chars().nth(0) == Some('$') {
+                    return Err(EvalErrorKind::IdentifierReserved(name.to_owned()).into())
+                }
                 let result = value.eval(ctx)?;
                 ctx.insert(name.to_owned(), result);
                 Ok(Value::Void)
             },
             Self::AssignOp(op, name, value) => {
+                if name == "true" || name == "false" || name.chars().nth(0) == Some('$') {
+                    return Err(EvalErrorKind::IdentifierReserved(name.to_owned()).into())
+                }
                 let name = name.to_owned();
                 if ctx.contains_key(&name) {
                     let prev = ctx[&name].clone();
@@ -39,11 +58,12 @@ impl Node {
                     ctx.insert(name.to_owned(), result);
                     Ok(Value::Void)
                 } else {
-                    Err(FunctionError::VariableUnset(name))
+                    Err(EvalErrorKind::VariableUnset(name).into())
                 }
             },
             Self::UnaryOp(op, rhs) => {
-                op.eval(rhs.eval(ctx)?)
+                let rhs = rhs.eval(ctx)?;
+                op.eval(rhs)
             },
             Self::BinaryOp(op, lhs, rhs) => {
                 let lhs = lhs.eval(ctx)?;
@@ -51,10 +71,15 @@ impl Node {
                 op.eval(lhs, rhs)
             },
             Self::Value(v) => Ok(v.clone()),
-            Self::Identifier(s) => if ctx.contains_key(s) {
+            Self::Identifier(s) => if s.chars().nth(0) == Some('$') {
+                match &s[..] {
+                    "$ctx" => Ok(ctx_to_value(ctx)),
+                    x => Err(EvalErrorKind::InvalidSpecialIdent(x.to_owned()).into())
+                }
+            } else if ctx.contains_key(s) {
                 Ok(ctx[s].clone())
             } else {
-                Err(FunctionError::VariableUnset(s.to_owned()))
+                Err(EvalErrorKind::VariableUnset(s.to_owned()).into())
             },
             Self::List(v) => {
                 let mut items = vec![];
@@ -71,6 +96,25 @@ impl Node {
                 Ok(last)
             },
             Self::FunctionCall(name, args) => {
+                if let Node::Identifier(name) = *name.clone() {
+                    if &name[0..1] == "$" {
+                        let res = match &name[1..] {
+                            "include" => include(args, ctx),
+                            "catch" => catch(args, ctx),
+                            "set" => set(args, ctx),
+                            "unset" => unset(args, ctx),
+                            "is_set" => is_set(args, ctx),
+                            "get" => get(args, ctx),
+                            x => return Err(EvalErrorKind::InvalidSpecialIdent(x.to_owned()).into())
+                        };
+                        return match res {
+                            Ok(x) => Ok(x),
+                            Err(EvalError{kind, trace: EvalTrace::None}) 
+                                => Err(EvalError{kind: kind, trace: EvalTrace::Function(name.to_owned())}),
+                            Err(e) => Err(e)
+                        }
+                    }
+                } 
                 let func = name.eval(ctx)?;
                 let mut argvals = vec![];
                 for arg in args {
@@ -83,107 +127,138 @@ impl Node {
             }
         }
     }
+}
 
-    pub fn simplify(&mut self) -> Option<Value> {
-        match self {
-            Self::Assign(_,value) => {
-                if let Some(v) = value.simplify() {
-                    *value = Box::new(Node::Value(v));
-                }
-                None
-            },
-            Self::AssignOp(_,_,value) => {
-                if let Some(v) = value.simplify() {
-                    *value = Box::new(Node::Value(v));
-                }
-                None
-            },
-            Self::UnaryOp(op, rhs) => {
-                if let Some(x) = rhs.simplify() {
-                    match op.eval(x.clone()) {
-                        Ok(v) => Some(v),
-                        Err(_) => {
-                            *rhs = Box::new(Node::Value(x));
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            },
-            Self::BinaryOp(op, lhs, rhs) => {
-                let l = lhs.simplify();
-                let r = rhs.simplify();
-                match (l, r) {
-                    (Some(x), None) => {
-                        *lhs = Box::new(Node::Value(x));
-                        None
-                    },
-                    (None, Some(x)) => {
-                        *rhs = Box::new(Node::Value(x));
-                        None
-                    },
-                    (Some(a), Some(b)) => match op.eval(a.clone(), b.clone()) {
-                        Ok(x) => Some(x),
-                        Err(_) => {
-                            *lhs = Box::new(Node::Value(a));
-                            *rhs = Box::new(Node::Value(b));
-                            None
-                        }
-                    },
-                    _ => None
-                }
-            },
-            Self::Value(v) => Some(v.clone()),
-            Self::Identifier(_) => None,
-            Self::List(v) => {
-                let mut items = vec![];
-                for i in 0..(v.len()) {
-                    let val = v[i].clone().simplify();
-                    if let Some(val) = val {
-                        v[i] = Node::Value(val.clone());
-                        items.push(val)
-                    }
-                }
-                if items.len() == v.len() {
-                    Some(Value::List(items))
-                } else {
-                    None
-                }
-            },
-            Self::Block(v) => {
-                for i in 0..(v.len()) {
-                    let val = v[i].clone().simplify();
-                    if let Some(val) = val {
-                        v[i] = Node::Value(val.clone());
-                    }
-                }
-                None
-            },
-            Self::FunctionCall(_,args) => {
-                for i in 0..args.len() {
-                    args[i].simplify();
-                }
-                None
-            },
-            Self::FunctionCreate(_,inner) => {
-                inner.simplify();
-                None
-            }
+fn include(args: &Vec<Node>, ctx: &mut Context) -> function::Result {
+    use {std::io::Read, std::sync::Arc};
+    function::bound_args(args.len(), 1, 1)?;
+    let a = args[0].eval(ctx)?;
+    if let Value::Str(name) = a {
+        let mut buf = String::new();
+        let mut f = match std::fs::File::open(name) {
+            Ok(x) => x,
+            Err(e) => return Err(EvalErrorKind::IOError(Arc::new(e)).into())
+        };
+        if let Err(e) = f.read_to_string(&mut buf) {
+            return Err(EvalErrorKind::IOError(Arc::new(e)).into())
         }
+        match crate::eval(&buf, ctx) {
+            Ok(x) => Ok(x),
+            Err(crate::Error::Eval(e)) => Err(e),
+            Err(x) => Err(EvalErrorKind::Other(format!("{}", x)).into())
+        }
+    } else {
+        Err(EvalErrorKind::WrongArgType(a).into())
     }
 }
 
-#[derive(Clone, PartialEq)]
-enum ParenTreeNode {
-    Token(Token), Node(Vec<ParenTreeNode>)
+fn catch(args: &Vec<Node>, ctx: &mut Context) -> function::Result {
+    function::bound_args(args.len(), 1, 2)?;
+    let alt = if args.len() == 1 {
+        Value::Void
+    } else {
+        args[1].eval(ctx)?
+    };
+    match args[0].eval(ctx) {
+        Ok(x) => Ok(x),
+        Err(_) => Ok(alt)
+    }
 }
 
-impl std::fmt::Debug for ParenTreeNode {
+fn set(args: &Vec<Node>, ctx: &mut Context) -> function::Result {
+    function::bound_args(args.len(), 2, 2)?;
+    let a = args[0].eval(ctx)?;
+    let val = args[1].eval(ctx)?;
+    if let Value::Str(name) = a {
+        ctx.insert(name, val);
+        Ok(Value::Void)
+    } else {
+        Err(EvalErrorKind::WrongArgType(a).into())
+    }
+}
+
+fn unset(args: &Vec<Node>, ctx: &mut Context) -> function::Result {
+    function::bound_args(args.len(), 1, 1)?;
+    let a = args[0].eval(ctx)?;
+    if let Value::Str(name) = a {
+        let val = ctx.get(&name).cloned().unwrap_or(Value::Void);
+        ctx.remove(&name);
+        Ok(val)
+    } else {
+        Err(EvalErrorKind::WrongArgType(a).into())
+    }
+}
+
+fn is_set(args: &Vec<Node>, ctx: &mut Context) -> function::Result {
+    function::bound_args(args.len(), 1, 1)?;
+    let a = args[0].eval(ctx)?;
+    if let Value::Str(name) = a {
+        Ok(Value::Bool(ctx.contains_key(&name)))
+    } else {
+        Err(EvalErrorKind::WrongArgType(a).into())
+    }
+}
+
+fn get(args: &Vec<Node>, ctx: &mut Context) -> function::Result {
+    function::bound_args(args.len(), 1, 1)?;
+    let a = args[0].eval(ctx)?;
+    if let Value::Str(name) = a {
+        match ctx.get(&name) {
+            Some(x) => Ok(x.clone()),
+            None => Err(EvalErrorKind::VariableUnset(name).into())
+        }
+    } else {
+        Err(EvalErrorKind::WrongArgType(a).into())
+    }
+}
+
+pub fn value_to_ctx(value: &Value) -> Option<Context> {
+    if let Value::List(list) = value {
+        let mut ctx = Context::new();
+        for item in list {
+            if let Value::List(l) = item {
+                if l.len() != 2 {
+                    return None
+                }
+                if let Value::Str(s) = &l[0] {
+                    ctx.insert(s.to_owned(), l[1].clone());
+                } else {
+                    return None
+                }
+            } else {
+                return None
+            }
+        }
+        Some(ctx)
+    } else {
+        None
+    }
+}
+
+pub fn ctx_to_value(ctx: &Context) -> Value {
+    let mut l = vec![];
+    for (k, v) in ctx {
+        l.push(Value::List(vec![Value::Str(k.to_owned()), v.clone()]))
+    }
+    Value::List(l)
+}
+
+#[derive(Clone, PartialEq)]
+#[allow(dead_code)]
+enum GroupNode {
+    Token(Token), Node(Vec<GroupNode>), List(Vec<GroupNode>)
+}
+
+impl std::fmt::Debug for GroupNode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Token(a) => write!(f, "{:?}", a)?,
-            Self::Node(v) => write!(f, "[{}]", 
+            Self::Node(v) => write!(f, "({})]", 
+                    v.iter()
+                    .map(|x| format!("{:?}", x))
+                    .collect::<Vec<String>>()
+                    .join(", "))?,
+            Self::List(v) => write!(f, "[{}]", 
                     v.iter()
                     .map(|x| format!("{:?}", x))
                     .collect::<Vec<String>>()
@@ -198,11 +273,11 @@ pub fn gen_tree(tokens: Vec<Token>) -> Result<Node, TreeError> {
     finish_tree(parentree)
 }
 
-fn finish_tree(root: ParenTreeNode) -> Result<Node, TreeError> {
-    if let ParenTreeNode::Token(a) = root {
+fn finish_tree(root: GroupNode) -> Result<Node, TreeError> {
+    if let GroupNode::Token(a) = root {
         match a {
             Token::BinaryOp(_) | Token::UnaryOp(_) | Token::Assign | Token::AssignOp(_)
-            | Token::Comma | Token::Semicolon | Token::FunctionCall | Token::Colon
+            | Token::Comma | Token::FunctionCall | Token::Colon
                 => Err(TreeError::TokenNoArgs(a)),
             Token::Integer(n) => Ok(Node::Value(Value::Integer(n))),
             Token::Float(n) => Ok(Node::Value(Value::Float(n))),
@@ -210,54 +285,60 @@ fn finish_tree(root: ParenTreeNode) -> Result<Node, TreeError> {
             Token::True => Ok(Node::Value(Value::Bool(true))),
             Token::False => Ok(Node::Value(Value::Bool(false))),
             Token::Identifier(s) => Ok(Node::Identifier(s)),
+            Token::Str(s) => Ok(Node::Value(Value::Str(s))),
+            Token::Semicolon => Ok(Node::Value(Value::Void)),
             Token::LParen | Token::RParen => unreachable!()
         }
-    } else if let ParenTreeNode::Node(nodes) = root {
+    } else if let GroupNode::Node(nodes) = root {
         if nodes.len() == 0 {
             return Ok(Node::List(vec![]));
         } else if nodes.len() == 1 {
             return finish_tree(nodes[0].clone());
         }
         let (before, pivot, after) = next_split(nodes);
-        if let ParenTreeNode::Token(token) = pivot {
+        if let GroupNode::Token(token) = pivot {
             match token {
                 Token::LParen | Token::RParen => unreachable!(),
-                Token::BinaryOp(op)
-                    => return Ok(Node::BinaryOp(op, 
-                            Box::new(finish_tree(ParenTreeNode::Node(before))?), 
-                            Box::new(finish_tree(ParenTreeNode::Node(after))?))),
-                Token::UnaryOp(op)
-                    => return Ok(Node::UnaryOp(op,
-                            Box::new(finish_tree(ParenTreeNode::Node(after))?))),
-                Token::Assign
-                    => if before.len() == 1 {
-                        if let ParenTreeNode::Token(Token::Identifier(name)) = &before[0] {
-                            return Ok(Node::Assign(name.to_owned(),
-                                Box::new(finish_tree(ParenTreeNode::Node(after))?)))
-                        } else {
-                            return Err(TreeError::AssignLeftInvalid)
-                        }
+                Token::BinaryOp(op) => if before.len() == 0 || after.len() == 0 {
+                    return Err(TreeError::TokenNoArgs(Token::BinaryOp(op)))
+                } else {
+                    return Ok(Node::BinaryOp(op, 
+                        Box::new(finish_tree(GroupNode::Node(before))?), 
+                        Box::new(finish_tree(GroupNode::Node(after))?)))
+                },
+                Token::UnaryOp(op) => if after.len() == 0 {
+                    return Err(TreeError::TokenNoArgs(Token::UnaryOp(op)))
+                } else {
+                    return Ok(Node::UnaryOp(op,
+                            Box::new(finish_tree(GroupNode::Node(after))?)))
+                },
+                Token::Assign => if before.len() == 1 {
+                    if let GroupNode::Token(Token::Identifier(name)) = &before[0] {
+                        return Ok(Node::Assign(name.to_owned(),
+                            Box::new(finish_tree(GroupNode::Node(after))?)))
                     } else {
                         return Err(TreeError::AssignLeftInvalid)
-                    },
-                Token::AssignOp(op)
-                    => if before.len() == 1 {
-                        if let ParenTreeNode::Token(Token::Identifier(name)) = &before[0] {
-                            return Ok(Node::AssignOp(op, name.to_owned(),
-                                Box::new(finish_tree(ParenTreeNode::Node(after))?)))
-                        } else {
-                            return Err(TreeError::AssignLeftInvalid)
-                        }
+                    }
+                } else {
+                    return Err(TreeError::AssignLeftInvalid)
+                },
+                Token::AssignOp(op) => if before.len() == 1 {
+                    if let GroupNode::Token(Token::Identifier(name)) = &before[0] {
+                        return Ok(Node::AssignOp(op, name.to_owned(),
+                            Box::new(finish_tree(GroupNode::Node(after))?)))
                     } else {
                         return Err(TreeError::AssignLeftInvalid)
-                    },
+                    }
+                } else {
+                    return Err(TreeError::AssignLeftInvalid)
+                },
                 Token::FunctionCall => {
                     let name = if before.len() == 1 {
                         finish_tree(before[0].clone())?
                     } else {
-                        finish_tree(ParenTreeNode::Node(before))?
+                        finish_tree(GroupNode::Node(before))?
                     };
-                    let args = finish_tree(ParenTreeNode::Node(after))?;
+                    let args = finish_tree(GroupNode::Node(after))?;
                     if let Node::List(args) = args {
                         return Ok(Node::FunctionCall(Box::new(name), args))
                     } else {
@@ -266,22 +347,25 @@ fn finish_tree(root: ParenTreeNode) -> Result<Node, TreeError> {
                 },
                 Token::Comma => {
                     let mut items = vec![];
-                    items.push(finish_tree(ParenTreeNode::Node(before))?);
+                    if before.len() == 0 {
+                        return Err(TreeError::TokenNoArgs(Token::Comma))
+                    }
+                    items.push(finish_tree(GroupNode::Node(before))?);
                     if after.len() > 0 {
                         let mut cdr = after;
                         loop {
                             let split = next_split(cdr.clone());
                             let (car, pivot) = (split.0, split.1);
                             let next_cdr = split.2;
-                            if pivot == ParenTreeNode::Token(Token::Comma) {
-                                items.push(finish_tree(ParenTreeNode::Node(car))?);
+                            if pivot == GroupNode::Token(Token::Comma) {
+                                items.push(finish_tree(GroupNode::Node(car))?);
                                 if next_cdr.len() == 0 {
                                     break
                                 } else {
                                     cdr = next_cdr;
                                 }
                             } else {
-                                items.push(finish_tree(ParenTreeNode::Node(cdr))?);
+                                items.push(finish_tree(GroupNode::Node(cdr))?);
                                 break
                             }
                         }
@@ -289,8 +373,16 @@ fn finish_tree(root: ParenTreeNode) -> Result<Node, TreeError> {
                     return Ok(Node::List(items))
                 },
                 Token::Semicolon => {
-                    let before = finish_tree(ParenTreeNode::Node(before))?;
-                    let after = finish_tree(ParenTreeNode::Node(after))?;
+                    if before.len() == 0 {
+                        return finish_tree(GroupNode::Node(after))
+                    } else if after.len() == 0 {
+                        return Ok(Node::Block(vec![
+                            finish_tree(GroupNode::Node(before))?,
+                            Node::Value(Value::Void)
+                        ]))
+                    }
+                    let before = finish_tree(GroupNode::Node(before))?;
+                    let after = finish_tree(GroupNode::Node(after))?;
                     if let Node::Block(mut v) = after {
                         v.insert(0, before);
                         return Ok(Node::Block(v));
@@ -299,8 +391,8 @@ fn finish_tree(root: ParenTreeNode) -> Result<Node, TreeError> {
                     }
                 },
                 Token::Colon => {
-                    let before = finish_tree(ParenTreeNode::Node(before))?;
-                    let after = finish_tree(ParenTreeNode::Node(after))?;
+                    let before = finish_tree(GroupNode::Node(before))?;
+                    let after = finish_tree(GroupNode::Node(after))?;
                     let params = match before {
                         Node::Identifier(s) => vec![s],
                         Node::List(l) => {
@@ -324,7 +416,6 @@ fn finish_tree(root: ParenTreeNode) -> Result<Node, TreeError> {
                 }
             }
         } else {
-            println!("{:?}", pivot);
             todo!()
         }
     } else {
@@ -332,11 +423,11 @@ fn finish_tree(root: ParenTreeNode) -> Result<Node, TreeError> {
     }
 }
 
-fn next_split(nodes: Vec<ParenTreeNode>) -> (Vec<ParenTreeNode>, ParenTreeNode, Vec<ParenTreeNode>) {
+fn next_split(nodes: Vec<GroupNode>) -> (Vec<GroupNode>, GroupNode, Vec<GroupNode>) {
     let mut max_binding = 0;
     let mut idx = 0;
     for (i, node) in nodes.iter().enumerate() {
-        if let ParenTreeNode::Token(token) = node {
+        if let GroupNode::Token(token) = node {
             let binding = token.binding();
             let right = token.right_assoc();
             if binding > max_binding || (binding == max_binding && !right) {
@@ -351,7 +442,7 @@ fn next_split(nodes: Vec<ParenTreeNode>) -> (Vec<ParenTreeNode>, ParenTreeNode, 
     (before.to_vec(), pivot.clone(), after.to_vec())
 }
 
-fn parentree(tokens: Vec<Token>) -> Result<ParenTreeNode, TreeError> {
+fn parentree(tokens: Vec<Token>) -> Result<GroupNode, TreeError> {
     let mut depth = 0;
     let mut subtree = vec![];
     let mut res = vec![];
@@ -368,7 +459,7 @@ fn parentree(tokens: Vec<Token>) -> Result<ParenTreeNode, TreeError> {
                 return Err(TreeError::NoLParen);
             } else if depth == 0 {
                 if !last_token_op {
-                    res.push(ParenTreeNode::Token(Token::FunctionCall));
+                    res.push(GroupNode::Token(Token::FunctionCall));
                 }
                 res.push(parentree(subtree)?);
                 subtree = vec![];
@@ -382,12 +473,12 @@ fn parentree(tokens: Vec<Token>) -> Result<ParenTreeNode, TreeError> {
             let is_op = token.is_op();
             if last_token_op {
                 if let Token::BinaryOp(BinaryOp::Sub) = token {
-                    res.push(ParenTreeNode::Token(Token::UnaryOp(UnaryOp::Neg)));
+                    res.push(GroupNode::Token(Token::UnaryOp(UnaryOp::Neg)));
                 } else {
-                    res.push(ParenTreeNode::Token(token));
+                    res.push(GroupNode::Token(token));
                 }
             } else {
-                res.push(ParenTreeNode::Token(token));
+                res.push(GroupNode::Token(token));
             }
             last_token_op = is_op;
         }
@@ -395,5 +486,5 @@ fn parentree(tokens: Vec<Token>) -> Result<ParenTreeNode, TreeError> {
     if depth > 0 {
         return Err(TreeError::NoRParen);
     }
-    Ok(ParenTreeNode::Node(res))
+    Ok(GroupNode::Node(res))
 }

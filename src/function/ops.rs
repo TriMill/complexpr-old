@@ -13,6 +13,7 @@ lazy_static::lazy_static! {
         ctx.insert_function("frac".to_owned(), &frac);
         ctx.insert_function("mod".to_owned(), &modulo);
         ctx.insert_function("pow".to_owned(), &pow);
+        ctx.insert_function("cmp".to_owned(), &cmp);
         ctx
     };
 }
@@ -99,4 +100,15 @@ pub fn pow(args: Vec<Value>) -> Result {
         }
         Ok(res)
     }
+}
+
+pub fn cmp(args: Vec<Value>) -> Result {
+    use std::cmp::Ordering;
+    bound_args(args.len(), 2, 2)?;
+    Ok(match args[0].partial_cmp(&args[1]) {
+        Some(Ordering::Greater) => Value::Integer(1),
+        Some(Ordering::Equal) => Value::Integer(0),
+        Some(Ordering::Less) => Value::Integer(-1),
+        None => Value::Void,
+    })
 }

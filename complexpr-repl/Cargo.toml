@@ -1,0 +1,9 @@
+[package]
+name = "complexpr-repl"
+version = "0.1.0"
+authors = ["trimill"]
+edition = "2018"
+
+[dependencies]
+complexpr = { path = "../" }
+rustyline = "7.1.0"

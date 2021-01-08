@@ -11,7 +11,17 @@ pub use tree::Node;
 pub enum Error {
     Tokenize(token::TokenizeError),
     Tree(tree::TreeError),
-    Eval(function::FunctionError),
+    Eval(function::EvalError),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Tokenize(e) => write!(f, "{}", e),
+            Self::Tree(e) => write!(f, "{}", e),
+            Self::Eval(e) => write!(f, "{}", e),
+        }
+    }
 }
 
 pub fn eval(expr: &str, ctx: &mut Context) -> Result<Value, Error> {
@@ -33,12 +43,12 @@ pub fn eval_str(expr: &str) -> Result<Value, Error> {
 pub fn compile(expr: &str) -> Result<Node, Error> {
     match token::tokenize(expr) {
         Err(e) => Err(Error::Tokenize(e)),
-        Ok(tokens) => match tree::gen_tree(tokens) {
-            Err(e) => Err(Error::Tree(e)),
-            Ok(n) => {
-                let mut n = Node::Block(vec![n]);
-                n.simplify();
-                Ok(n)
+        Ok(tokens) => {
+            match tree::gen_tree(tokens) {
+                Err(e) => Err(Error::Tree(e)),
+                Ok(n) => {
+                    Ok(n)
+                }
             }
         }
     }
@@ -65,10 +75,20 @@ lazy_static! {
         }
         ctx
     };
+    static ref FULL_CONTEXT: Context = {
+        let mut ctx = DEFAULT_CONTEXT.clone();
+        for (k, v) in function::io::CTX_ALL.iter() {
+            ctx.insert(k.to_owned(), v.clone());
+        }
+        ctx
+    };
 }
 
 pub fn ctx_default() -> Context {
     DEFAULT_CONTEXT.clone()
+}
+pub fn ctx_full() -> Context {
+    FULL_CONTEXT.clone()
 }
 pub fn ctx_empty() -> Context {
     Context::new()

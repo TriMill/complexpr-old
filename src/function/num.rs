@@ -1,5 +1,6 @@
 use crate::function::*;
 use crate::Value;
+use crate::value::Ratio;
 
 use crate::Context;
 lazy_static::lazy_static! {
@@ -13,6 +14,7 @@ lazy_static::lazy_static! {
         ctx.insert_function("root".to_owned(), &root);
         ctx.insert_function("exp".to_owned(), &exp);
         ctx.insert_function("log".to_owned(), &log);
+        ctx.insert_function("ln".to_owned(), &ln);
         ctx.insert_function("fract".to_owned(), &fract);
         ctx.insert_function("floor".to_owned(), &floor);
         ctx.insert_function("deg2rad".to_owned(), &deg2rad);
@@ -25,15 +27,24 @@ lazy_static::lazy_static! {
         ctx.insert_function("is_bool".to_owned(), &is_bool);
         ctx.insert_function("is_list".to_owned(), &is_list);
         ctx.insert_function("is_callable".to_owned(), &is_callable);
+        ctx.insert_function("is_infinite".to_owned(), &is_infinite);
+        ctx.insert_function("is_nan".to_owned(), &is_nan);
+        ctx.insert_function("is_normal".to_owned(), &is_normal);
         ctx.insert_function("to_ratio".to_owned(), &to_ratio);
         ctx.insert("pi".to_owned(), PI.clone());
         ctx.insert("e".to_owned(), E.clone());
+        ctx.insert("inf".to_owned(), INF.clone());
+        ctx.insert("neg_inf".to_owned(), NEG_INF.clone());
+        ctx.insert("nan".to_owned(), NAN.clone());
         ctx
     };
 }
 
 pub const PI: Value = Value::Float(std::f64::consts::PI);
 pub const E: Value = Value::Float(std::f64::consts::E);
+pub const INF: Value = Value::Float(std::f64::INFINITY);
+pub const NEG_INF: Value = Value::Float(std::f64::NEG_INFINITY);
+pub const NAN: Value = Value::Float(std::f64::NAN);
 
 pub fn min(args: Vec<Value>) -> Result {
     min_args(args.len(), 1)?;
@@ -120,6 +131,15 @@ pub fn log(args: Vec<Value>) -> Result {
     }
 }
 
+pub fn ln(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 2)?;
+    match to_float_or_complex(args[0].clone())? {
+        Value::Float(n) => Ok(Value::Float(n.ln())),
+        Value::Complex(n) => Ok(Value::Complex(n.ln())),
+        _ => unreachable!()
+    }
+}
+
 pub fn fract(args: Vec<Value>) -> Result {
     bound_args(args.len(), 1, 1)?;
     match args[0] {
@@ -127,7 +147,7 @@ pub fn fract(args: Vec<Value>) -> Result {
         Value::Float(n) => Ok(Value::Float(n.fract())),
         Value::Ratio(n) => Ok(Value::Ratio(n.fract())),
         Value::Complex(n) => Ok(Value::from_complex(n.re.fract(), n.im.fract())),
-        _ => Err(FunctionError::WrongArgTypes(args))
+        _ => Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -138,7 +158,7 @@ pub fn floor(args: Vec<Value>) -> Result {
         Value::Float(n) => Ok(Value::Float(n.floor())),
         Value::Ratio(n) => Ok(Value::Ratio(n.floor())),
         Value::Complex(n) => Ok(Value::from_complex(n.re.floor(), n.im.floor())),
-        _ => Err(FunctionError::WrongArgTypes(args))
+        _ => Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -164,87 +184,86 @@ pub fn factorial(args: Vec<Value>) -> Result {
     bound_args(args.len(), 1, 1)?;
     match args[0] {
         Value::Integer(n) if n >= 0 => Ok(Value::Integer((1..(n+1)).fold(1, |a,b|a*b))),
-        Value::Integer(n) => Err(FunctionError::WrongArgValue(Value::Integer(n))),
-        _ => Err(FunctionError::WrongArgTypes(args))
+        Value::Integer(n) => Err(EvalErrorKind::WrongArgValue(Value::Integer(n)).into()),
+        _ => Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
 pub fn is_float(args: Vec<Value>) -> Result {
-    Ok(Value::Bool(args.iter().map(|x| x.is_float()).fold(true, |a,b| a && b)))
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Bool(args[0].is_float()))
 }
 pub fn is_int(args: Vec<Value>) -> Result {
-    Ok(Value::Bool(args.iter().map(|x| x.is_int()).fold(true, |a,b| a && b)))
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Bool(args[0].is_int()))
 }
 pub fn is_complex(args: Vec<Value>) -> Result {
-    Ok(Value::Bool(args.iter().map(|x| x.is_complex()).fold(true, |a,b| a && b)))
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Bool(args[0].is_complex()))
 }
 pub fn is_ratio(args: Vec<Value>) -> Result {
-    Ok(Value::Bool(args.iter().map(|x| x.is_ratio()).fold(true, |a,b| a && b)))
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Bool(args[0].is_ratio()))
 }
 pub fn is_bool(args: Vec<Value>) -> Result {
-    Ok(Value::Bool(args.iter().map(|x| x.is_bool()).fold(true, |a,b| a && b)))
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Bool(args[0].is_bool()))
 }
 pub fn is_list(args: Vec<Value>) -> Result {
-    Ok(Value::Bool(args.iter().map(|x| x.is_list()).fold(true, |a,b| a && b)))
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Bool(args[0].is_list()))
+}
+pub fn is_str(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Bool(args[0].is_str()))
 }
 pub fn is_callable(args: Vec<Value>) -> Result {
-    Ok(Value::Bool(args.iter().map(|x| x.is_callable()).fold(true, |a,b| a && b)))
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Bool(args[0].is_callable()))
+}
+pub fn is_void(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Bool(args[0].is_void()))
+}
+
+pub fn is_infinite(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    return Ok(Value::Bool(match args[0] {
+        Value::Float(f) => f.is_infinite(),
+        Value::Complex(c) => c.is_infinite(),
+        _ => false
+    }))
+}
+pub fn is_nan(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    return Ok(Value::Bool(match args[0] {
+        Value::Float(f) => f.is_nan(),
+        Value::Complex(c) => c.is_nan(),
+        _ => false
+    }))
+}
+pub fn is_normal(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    return Ok(Value::Bool(match args[0] {
+        Value::Float(f) => !f.is_nan() && !f.is_infinite(),
+        Value::Complex(c) => !c.is_nan() && !c.is_infinite(),
+        Value::Ratio(_) | Value::Integer(_) => true,
+        _ => false
+    }))
 }
 
 pub fn to_ratio(args: Vec<Value>) -> Result {
-    bound_args(args.len(), 1, 2)?;
+    bound_args(args.len(), 1, 1)?;
     if let Value::Ratio(_) = args[0] {
         Ok(args[0].clone())
     } else if let Value::Integer(i) = args[0] {
         Ok(Value::from_ratio(i, 1))
     } else if let Value::Float(f) = args[0] {
-        if args.len() == 1 {
-            Ok(Value::Ratio(float_to_ratio(f, 0.)))
-        } else {
-            match to_float(args[1].clone())? {
-                Value::Float(p) => {
-                    Ok(Value::Ratio(float_to_ratio(f, p)))
-                },
-                _ => unimplemented!()
-            }
+        match Ratio::approximate_float(f) {
+            Some(x) => Ok(Value::Ratio(x)),
+            None => Err(EvalErrorKind::WrongArgValue(args[0].clone()).into())
         }
     } else {
-        Err(FunctionError::WrongArgTypes(args))
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
-
-fn float_to_ratio(n: f64, epsilon: f64) -> crate::value::Ratio {
-    use crate::value::{r2f64, Ratio};
-    let sign = if n >= 0. {
-        1.
-    } else {
-        -1.
-    };
-    let n = n*sign;
-    let whole = n.floor() as i64;
-    let n = n.fract();
-    if n == 0. {
-        return Ratio::from(whole*(sign as i64));
-    }
-    let mut min = Ratio::new(0,1);
-    let mut max = Ratio::new(1,1);
-    let mut res = Ratio::new(1,2);
-    let mut diff = n - r2f64(&res);
-    while diff.abs() > epsilon {
-        if diff > 0. {
-            // res is too small, min = res, res = res..max
-            min = res;
-            res = Ratio::new(res.numer() + max.numer(), res.denom() + max.denom());
-        } else if diff < 0. {
-            // res is too large, max = res, res = min..res
-            max = res;
-            res = Ratio::new(res.numer() + min.numer(), res.denom() + min.denom());
-        } else {
-            // res is exact
-            break
-        }
-        diff = n - r2f64(&res);
-    }
-    return Ratio::from(sign as i64) * (res + Ratio::from(whole));
-}
-

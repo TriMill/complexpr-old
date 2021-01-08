@@ -25,7 +25,7 @@ pub fn re(args: Vec<Value>) -> Result {
     if let Value::Complex(c) = args[0] {
         Ok(Value::Float(c.re))
     } else {
-        Err(FunctionError::WrongArgTypes(args))
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -34,7 +34,7 @@ pub fn im(args: Vec<Value>) -> Result {
     if let Value::Complex(c) = args[0] {
         Ok(Value::Float(c.im))
     } else {
-        Err(FunctionError::WrongArgTypes(args))
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -43,7 +43,7 @@ pub fn conj(args: Vec<Value>) -> Result {
     if let Value::Complex(c) = args[0] {
         Ok(Value::Complex(c.conj()))
     } else {
-        Err(FunctionError::WrongArgTypes(args))
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -52,7 +52,7 @@ pub fn arg(args: Vec<Value>) -> Result {
     if let Value::Complex(c) = args[0] {
         Ok(Value::Float(c.arg()))
     } else {
-        Err(FunctionError::WrongArgTypes(args))
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -61,7 +61,7 @@ pub fn norm(args: Vec<Value>) -> Result {
     if let Value::Complex(c) = args[0] {
         Ok(Value::Float(c.norm()))
     } else {
-        Err(FunctionError::WrongArgTypes(args))
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -70,7 +70,7 @@ pub fn norm_sq(args: Vec<Value>) -> Result {
     if let Value::Complex(c) = args[0] {
         Ok(Value::Float(c.norm_sqr()))
     } else {
-        Err(FunctionError::WrongArgTypes(args))
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -79,7 +79,7 @@ pub fn normalize(args: Vec<Value>) -> Result {
     if let Value::Complex(c) = args[0] {
         Ok(Value::Complex(c / c.norm()))
     } else {
-        Err(FunctionError::WrongArgTypes(args))
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -92,7 +92,7 @@ pub fn to_polar(args: Vec<Value>) -> Result {
            Value::Float(polar.1)
         ]))
     } else {
-        Err(FunctionError::WrongArgTypes(args))
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
@@ -106,10 +106,10 @@ pub fn from_polar(args: Vec<Value>) -> Result {
                 r = l[0].clone();
                 theta = l[1].clone();
             } else {
-                return Err(FunctionError::WrongArgTypes(args))
+                return Err(EvalErrorKind::ListOutOfBounds(1).into())
             }
         } else {
-            return Err(FunctionError::WrongArgTypes(args))
+            return Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
         }
     } else {
         r = args[0].clone();
@@ -134,12 +134,25 @@ pub fn all_roots(args: Vec<Value>) -> Result {
             let (r, theta) = c.to_polar();
             let res_r = r.powf(n_recip);
             let res = (0..*n)
-                .map(|k| TAU*(k as f64))
-                .map(|k| Complex::from_polar(res_r, (theta + k)*n_recip))
+                .map(|k| (k as f64)*TAU/(*n as f64) + theta)
+                .map(|t| Complex::new(
+                        res_r*cos(t),
+                        res_r*sin(t)))
                 .map(|c| Value::Complex(c))
                 .collect();
             Ok(Value::List(res))
         },
-        _ => Err(FunctionError::WrongArgTypes(args))
+        (Value::Complex(_), x) => Err(EvalErrorKind::WrongArgType(x.clone()).into()),
+        (x,_) => Err(EvalErrorKind::WrongArgType(x.clone()).into())
     }
+}
+
+fn cos(n: f64) -> f64 {
+    let (cos, sin) = (n.cos(), n.sin());
+    0.5*cos + 0.5*cos.signum()*(1. - sin*sin).sqrt()
+}
+
+fn sin(n: f64) -> f64 {
+    let (cos, sin) = (n.cos(), n.sin());
+    0.5*sin + 0.5*sin.signum()*(1. - cos*cos).sqrt()
 }

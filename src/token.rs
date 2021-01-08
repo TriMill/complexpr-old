@@ -4,11 +4,13 @@ use crate::ops;
 
 lazy_static! {
     static ref NEXT_TOKEN: Regex 
-        = Regex::new(r"^\d+(\.\d*)?i?|\.\d+i?|\(|\)|,|;|:|//|\^|<=?|>=?|!=|==|=|!|[+*-/%]=?|[a-zA-z][a-zA-Z0-9_]*").unwrap();
+        = Regex::new(r###"-?^\d+(\.\d*)?i?|-?\.\d+i?|\(|\)|,|;|:|//|\^|<=?|>=?|!=|==|=|!|[+*-/%]=?|\$?[a-zA-Z_][a-zA-Z0-9_]*|"(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]+\}|\\x[0-9a-fA-F]{2})*""###).unwrap();
     static ref IS_NUMBER: Regex
-        = Regex::new(r"^\d+(\.\d*)?i?|\.\d+i?|i$").unwrap();
+        = Regex::new(r"-?^\d+(\.\d*)?i?|-?\.\d+i?|-?i$").unwrap();
     static ref IS_IDENT: Regex
-        = Regex::new(r"^[a-zA-z][a-zA-Z0-9_]*$").unwrap();
+        = Regex::new(r"^\$?[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
+    static ref IS_STR: Regex
+        = Regex::new(r###""(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]+\}|\\x[0-9a-fA-F]{2})*""###).unwrap();
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -16,9 +18,10 @@ pub enum Token {
     BinaryOp(ops::BinaryOp),
     UnaryOp(ops::UnaryOp),
     Assign, AssignOp(ops::BinaryOp),
-    LParen, RParen, Comma, Semicolon, Colon,
+    LParen, RParen,
+    Comma, Semicolon, Colon,
     Integer(i64), Float(f64), Imaginary(f64), True, False,
-    Identifier(String),
+    Identifier(String), Str(String),
     FunctionCall
 }
 
@@ -50,11 +53,11 @@ impl Token {
                 | BinaryOp(ops::BinaryOp::NotEqual) => 80,
             BinaryOp(ops::BinaryOp::Add) 
                 | BinaryOp(ops::BinaryOp::Sub) => 70,
-            UnaryOp(ops::UnaryOp::Neg) => 60,
             BinaryOp(ops::BinaryOp::Mul) 
                 | BinaryOp(ops::BinaryOp::Div) 
-                | BinaryOp(ops::BinaryOp::Frac) => 50,
+                | BinaryOp(ops::BinaryOp::Frac) => 60,
             BinaryOp(ops::BinaryOp::Power) => 40,
+            UnaryOp(ops::UnaryOp::Neg) => 35,
             Colon => 30,
             FunctionCall => 20,
             _ => 0
@@ -64,7 +67,7 @@ impl Token {
     pub fn right_assoc(&self) -> bool {
         use Token::*;
         match self {
-           UnaryOp(_) => true,
+           UnaryOp(_) => false,
            BinaryOp(ops::BinaryOp::Power) => true,
            Assign | AssignOp(_) => true,
            Comma => true,
@@ -75,7 +78,22 @@ impl Token {
 
 #[derive(Clone, Debug)]
 pub enum TokenizeError {
-    Unexpected(usize, char), InvalidNumber(String), UnknownToken(String)
+    Unexpected(usize, char), InvalidNumber(String), UnknownToken(String), InvalidCodepoint(u32)
+}
+
+impl std::fmt::Display for TokenizeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Unexpected(n, c)
+                => write!(f, "Unexpected character {} at position {}", c, n),
+            Self::InvalidNumber(s)
+                => write!(f, "Numerical literal {} could not be parsed as a number", s),
+            Self::UnknownToken(s)
+                => write!(f, "Token {} extracted but unable to be identified", s),
+            Self::InvalidCodepoint(n)
+                => write!(f, "{:#x} is not a valid Unicode codepoint", n)
+        }
+    }
 }
 
 pub fn tokenize(s: &str) -> Result<Vec<Token>, TokenizeError> {
@@ -148,11 +166,15 @@ pub fn tokenize(s: &str) -> Result<Vec<Token>, TokenizeError> {
                     }
                 } else if let Some(ident) = IS_IDENT.find(token) {
                     Token::Identifier(ident.as_str().to_owned())
+                } else if let Some(s) = IS_STR.find(token) {
+                    Token::Str(parse_str(&s.as_str())?)
                 } else {
                     return Err(TokenizeError::UnknownToken(token.to_owned()))
                 }
             } else if let Some(ident) = IS_IDENT.find(token) {
                 Token::Identifier(ident.as_str().to_owned())
+            } else if let Some(s) = IS_STR.find(token) {
+                Token::Str(parse_str(&s.as_str())?)
             } else {
                 return Err(TokenizeError::UnknownToken(token.to_owned()))
             }
@@ -160,4 +182,49 @@ pub fn tokenize(s: &str) -> Result<Vec<Token>, TokenizeError> {
         tokens.push(token);
     }
     Ok(tokens)
+}
+
+fn parse_str(raw_str: &str) -> Result<String, TokenizeError> {
+    let raw_str = &raw_str[1..(raw_str.len()-1)];
+    let mut chars = raw_str.chars();
+    let mut res = String::new();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => unreachable!(),
+            '\\' => {
+                if let Some(esc) = chars.next() {
+                    match esc {
+                        'n' => res.push('\n'),
+                        'r' => res.push('\r'),
+                        't' => res.push('\t'),
+                        'e' => res.push('\x1b'),
+                        '0' => res.push('\0'),
+                        '"' => res.push('"'),
+                        '\\' => res.push('\\'),
+                        'x' => if let (Some(h), Some(l)) = (chars.next(), chars.next()) {
+                            let mut s = String::new();
+                            s.push(h);
+                            s.push(l);
+                            if let Ok(n) = u32::from_str_radix(&s, 16) {
+                                if let Some(c) = std::char::from_u32(n) {
+                                    res.push(c)
+                                } else {
+                                    return Err(TokenizeError::InvalidCodepoint(n))
+                                }
+                            } else {
+                                unreachable!()
+                            }
+                        } else {
+                            unreachable!()
+                        },
+                        _ => todo!()
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+            c => res.push(c)
+        }
+    }
+    Ok(res)
 }

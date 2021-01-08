@@ -5,6 +5,9 @@ authors = ["trimill"]
 edition = "2018"
 license = "GPL-3"
 
+[workspace]
+members = ["complexpr-repl"]
+
 [dependencies]
 num = "0.3"
 regex = "1.4"
