@@ -1,6 +1,7 @@
 pub mod ops;
 pub mod trig;
 pub mod num;
+pub mod types;
 pub mod util;
 pub mod complex;
 pub mod io;
@@ -8,6 +9,7 @@ use crate::Value;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
+/// The type of a [`EvalError`], including its parameters.
 pub enum EvalErrorKind {
     TooFewArgs{min: usize, count: usize}, TooManyArgs{max: usize, count: usize}, 
     AssignLeftNotIdent(Value), WrongFunc(Value),

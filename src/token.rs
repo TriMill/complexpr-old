@@ -4,13 +4,13 @@ use crate::ops;
 
 lazy_static! {
     static ref NEXT_TOKEN: Regex 
-        = Regex::new(r###"-?^\d+(\.\d*)?i?|-?\.\d+i?|\(|\)|,|;|:|//|\^|<=?|>=?|!=|==|=|!|[+*-/%]=?|\$?[a-zA-Z_][a-zA-Z0-9_]*|"(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]+\}|\\x[0-9a-fA-F]{2})*""###).unwrap();
+        = Regex::new(r###"-?^\d+(\.\d*)?i?|-?\.\d+i?|\(|\)|,|;|:|//|\^|<=?|>=?|!=|==|=|[+*-/%]=?|\$?[a-zA-Z_][a-zA-Z0-9_]*|"(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]{1,8}\}|\\x[0-9a-fA-F]{2})*""###).unwrap();
     static ref IS_NUMBER: Regex
         = Regex::new(r"-?^\d+(\.\d*)?i?|-?\.\d+i?|-?i$").unwrap();
     static ref IS_IDENT: Regex
         = Regex::new(r"^\$?[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
     static ref IS_STR: Regex
-        = Regex::new(r###""(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]+\}|\\x[0-9a-fA-F]{2})*""###).unwrap();
+        = Regex::new(r###""(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]{1,8}\}|\\x[0-9a-fA-F]{2})*""###).unwrap();
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,7 +89,7 @@ impl std::fmt::Display for TokenizeError {
             Self::InvalidNumber(s)
                 => write!(f, "Numerical literal {} could not be parsed as a number", s),
             Self::UnknownToken(s)
-                => write!(f, "Token {} extracted but unable to be identified", s),
+                => write!(f, "Token beginning with {} extracted but unable to be identified", s),
             Self::InvalidCodepoint(n)
                 => write!(f, "{:#x} is not a valid Unicode codepoint", n)
         }
@@ -149,14 +149,15 @@ pub fn tokenize(s: &str) -> Result<Vec<Token>, TokenizeError> {
             token => if let Some(nstr) = IS_NUMBER.find_at(token, 0) {
                 if nstr.start() == 0 {
                     let nstr = nstr.as_str();
+                    let last_len = nstr.chars().last().unwrap().to_string().len();
                     if nstr == "i" {
                         Token::Imaginary(1.)
                     } else if let Ok(n) = nstr.parse::<i64>() {
                         Token::Integer(n)
                     } else if let Ok(n) = nstr.parse::<f64>() {
                         Token::Float(n)
-                    } else if let Ok(n) = nstr[..nstr.len()-1].parse::<f64>() {
-                        if &nstr[nstr.len()-1..] == "i" {
+                    } else if let Ok(n) = nstr[..nstr.len()-last_len].parse::<f64>() {
+                        if &nstr[nstr.len()-last_len..] == "i" {
                             Token::Imaginary(n)
                         } else {
                             return Err(TokenizeError::InvalidNumber(nstr.to_owned()))
@@ -185,8 +186,9 @@ pub fn tokenize(s: &str) -> Result<Vec<Token>, TokenizeError> {
 }
 
 fn parse_str(raw_str: &str) -> Result<String, TokenizeError> {
+    // unreachable!(): regex already checked that this is impossible
     let raw_str = &raw_str[1..(raw_str.len()-1)];
-    let mut chars = raw_str.chars();
+    let mut chars = raw_str.chars().peekable();
     let mut res = String::new();
     while let Some(c) = chars.next() {
         match c {
@@ -205,19 +207,32 @@ fn parse_str(raw_str: &str) -> Result<String, TokenizeError> {
                             let mut s = String::new();
                             s.push(h);
                             s.push(l);
-                            if let Ok(n) = u32::from_str_radix(&s, 16) {
-                                if let Some(c) = std::char::from_u32(n) {
-                                    res.push(c)
-                                } else {
-                                    return Err(TokenizeError::InvalidCodepoint(n))
-                                }
+                            let n = u32::from_str_radix(&s, 16).unwrap();
+                            if let Some(c) = std::char::from_u32(n) {
+                                res.push(c)
                             } else {
-                                unreachable!()
+                                return Err(TokenizeError::InvalidCodepoint(n))
                             }
                         } else {
                             unreachable!()
                         },
-                        _ => todo!()
+                        'u' => {
+                            chars.next(); //discard '{'
+                            let mut s = String::new();
+                            while let Some(c) = chars.next() {
+                                if c == '}' {
+                                    break
+                                }
+                                s.push(c);
+                            }
+                            let n = u32::from_str_radix(&s, 16).unwrap();
+                            if let Some(c) = std::char::from_u32(n) {
+                                res.push(c)
+                            } else {
+                                return Err(TokenizeError::InvalidCodepoint(n))
+                            }
+                        }
+                        _ => unreachable!()
                     }
                 } else {
                     unreachable!()

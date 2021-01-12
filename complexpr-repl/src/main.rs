@@ -113,7 +113,7 @@ fn match_parens(line: &str, pos: usize) -> Result<usize, bool> {
             }
         }
         if matchpos == usize::MAX {
-            Err(false)
+            Err(true)
         } else {
             Ok(matchpos)
         }
@@ -132,7 +132,7 @@ fn match_parens(line: &str, pos: usize) -> Result<usize, bool> {
             }
         }
         if matchpos == usize::MAX {
-            Err(false)
+            Err(true)
         } else {
             Ok(matchpos)
         }

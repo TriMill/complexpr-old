@@ -416,7 +416,7 @@ fn finish_tree(root: GroupNode) -> Result<Node, TreeError> {
                 }
             }
         } else {
-            todo!()
+            unreachable!()
         }
     } else {
         unreachable!()

@@ -24,6 +24,8 @@ lazy_static::lazy_static! {
         ctx.insert_function("or_else".to_owned(), &or_else);
         ctx.insert_function("and_then".to_owned(), &and_then);
         ctx.insert_function("loop".to_owned(), &fn_loop);
+        ctx.insert_function("from_radix".to_owned(), &from_radix);
+        ctx.insert_function("to_radix".to_owned(), &from_radix);
         ctx
     };
 }
@@ -334,4 +336,60 @@ pub fn fn_loop(args: Vec<Value>) -> Result {
         }
     }
     Ok(res)
+}
+
+pub fn from_radix(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 2, 2)?;
+    if let Value::Integer(r) = args[1] {
+        if r < 2 || r > 36 {
+            return Err(EvalErrorKind::WrongArgValue(args[1].clone()).into())
+        }
+        if let Value::Str(s) = &args[0] {
+            match i64::from_str_radix(s, r as u32) {
+                Ok(n) => Ok(Value::Integer(n)),
+                Err(_) => Err(EvalErrorKind::WrongArgValue(args[0].clone()).into())
+            }
+        } else {
+            Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
+        }
+    } else {
+        Err(EvalErrorKind::WrongArgType(args[1].clone()).into())
+    }
+}
+
+pub fn to_radix(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 2, 2)?;
+    if let Value::Integer(r) = args[1] {
+        if r < 2 || r > 36 {
+            return Err(EvalErrorKind::WrongArgValue(args[1].clone()).into())
+        }
+        if let Value::Integer(s) = &args[0] {
+            Ok(Value::Str(format_radix(*s, r as u32)))
+        } else {
+            Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
+        }
+    } else {
+        Err(EvalErrorKind::WrongArgType(args[1].clone()).into())
+    }
+}
+
+fn format_radix(mut x: i64, radix: u32) -> String {
+    assert!(radix >= 2 && radix <= 36);
+    let i64radix = radix as i64;
+    let mut result = vec![];
+    let is_neg = x < 0;
+    x = x.abs();
+
+    loop {
+        let m = x % i64radix;
+        x = x / i64radix;
+        result.push(std::char::from_digit(m as u32, radix).unwrap());
+        if x == 0 {
+            break;
+        }
+    }
+    if is_neg {
+        result.push('-')
+    }
+    result.into_iter().rev().collect()
 }

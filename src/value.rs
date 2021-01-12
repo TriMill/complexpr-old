@@ -92,6 +92,20 @@ impl Value {
             _ => Err(EvalErrorKind::WrongFunc(self.clone()).into())
         }
     }
+    pub fn is_nan(&self) -> bool {
+        match self {
+            Value::Float(f) => f.is_nan(),
+            Value::Complex(c) => c.is_nan(),
+            _ => false
+        }
+    }
+    pub fn is_infinite(&self) -> bool {
+        match self {
+            Value::Float(f) => f.is_infinite(),
+            Value::Complex(c) => c.is_infinite(),
+            _ => false
+        }
+    }
 }
 
 impl PartialOrd<Value> for Value {
