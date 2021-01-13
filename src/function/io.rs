@@ -49,7 +49,7 @@ fn readln_inner() -> std::io::Result<Option<String>> {
     let mut buf = String::new();
     match std::io::stdin().lock().read_line(&mut buf)? {
         0 => Ok(None),
-        _ => Ok(Some(buf))
+        _ => Ok(Some(buf[..buf.len()-1].to_owned()))
     }
 }
 

@@ -22,6 +22,7 @@ lazy_static::lazy_static! {
         ctx.insert_function("to_int".to_owned(), &to_int);
         ctx.insert_function("to_ratio".to_owned(), &to_ratio);
         ctx.insert_function("to_str".to_owned(), &to_str);
+        ctx.insert_function("to_repr".to_owned(), &to_repr);
         ctx
     };
 }
@@ -149,4 +150,11 @@ pub fn to_ratio(args: Vec<Value>) -> Result {
 pub fn to_str(args: Vec<Value>) -> Result {
     bound_args(args.len(), 1, 1)?;
     Ok(Value::Str(args[0].to_string()))
+}
+
+/// Convert a value to it's representation (using the [`Debug`] implementation on [`Value`]). 
+/// Requires exactly one argument of any type, always returns a [`Value::Str`].
+pub fn to_repr(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    Ok(Value::Str(format!("{:?}", args[0])))
 }

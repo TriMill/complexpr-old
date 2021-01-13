@@ -3,14 +3,16 @@ use regex::Regex;
 use crate::ops;
 
 lazy_static! {
-    static ref NEXT_TOKEN: Regex 
-        = Regex::new(r###"-?^\d+(\.\d*)?i?|-?\.\d+i?|\(|\)|,|;|:|//|\^|<=?|>=?|!=|==|=|[+*-/%]=?|\$?[a-zA-Z_][a-zA-Z0-9_]*|"(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]{1,8}\}|\\x[0-9a-fA-F]{2})*""###).unwrap();
+    //static ref NEXT_TOKEN: Regex 
+    //    = Regex::new(r###"-?^\d+(\.\d*)?i?|-?\.\d+i?|\(|\)|,|;|:|//|\^|<=?|>=?|!=|==|=|[+*-/%]=?|\$?[a-zA-Z_][a-zA-Z0-9_]*|"(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]{1,8}\}|\\x[0-9a-fA-F]{2})*""###).unwrap();
+    static ref IS_OP: Regex 
+        = Regex::new(r"^\(|\)|,|;|:|//|\^|<=?|>=?|!=|==|=|[+*\-/%]=?").unwrap();
     static ref IS_NUMBER: Regex
-        = Regex::new(r"-?^\d+(\.\d*)?i?|-?\.\d+i?|-?i$").unwrap();
+        = Regex::new(r"^-?^\d+(\.\d*)?i?|-?\.\d+i?").unwrap();
     static ref IS_IDENT: Regex
-        = Regex::new(r"^\$?[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
+        = Regex::new(r"^\$?[a-zA-Z_][a-zA-Z0-9_]*").unwrap();
     static ref IS_STR: Regex
-        = Regex::new(r###""(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]{1,8}\}|\\x[0-9a-fA-F]{2})*""###).unwrap();
+        = Regex::new(r##"^"(?:[^"\\]|\\[\\"nrte0]|\\u\{[0-9a-fA-F]{1,8}\}|\\x[0-9a-fA-F]{2})*""##).unwrap();
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -78,18 +80,16 @@ impl Token {
 
 #[derive(Clone, Debug)]
 pub enum TokenizeError {
-    Unexpected(usize, char), InvalidNumber(String), UnknownToken(String), InvalidCodepoint(u32)
+    Unexpected(usize, char), InvalidNumber(usize, String), InvalidCodepoint(u32)
 }
 
 impl std::fmt::Display for TokenizeError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Unexpected(n, c)
-                => write!(f, "Unexpected character {} at position {}", c, n),
-            Self::InvalidNumber(s)
-                => write!(f, "Numerical literal {} could not be parsed as a number", s),
-            Self::UnknownToken(s)
-                => write!(f, "Token beginning with {} extracted but unable to be identified", s),
+                => write!(f, "Invalid token beginning with '{}' at position {}", c, n),
+            Self::InvalidNumber(n, s)
+                => write!(f, "Numerical literal '{}' at {} could not be parsed as a number", s, n),
             Self::InvalidCodepoint(n)
                 => write!(f, "{:#x} is not a valid Unicode codepoint", n)
         }
@@ -98,89 +98,102 @@ impl std::fmt::Display for TokenizeError {
 
 pub fn tokenize(s: &str) -> Result<Vec<Token>, TokenizeError> {
     let mut s = s.trim_end();
-    let mut raw_tokens: Vec<&str> = vec![];
+    let mut tokens = vec![];
     let mut idx: usize = 0;
     while s.len() > 0 {
         let s_len_before = s.len();
         s = s.trim_start();
         idx += s_len_before - s.len();
-        let next_match = NEXT_TOKEN.find(s);
-        if next_match.is_none() {
-            return Err(TokenizeError::Unexpected(idx, s.chars().next().unwrap_or('\0')));
-        }
-        let next_match = next_match.unwrap();
-        let (start, end) = (next_match.start(), next_match.end());
-        if start != 0 {
-            return Err(TokenizeError::Unexpected(idx, s.chars().next().unwrap_or('\0')));
-        }
-        idx += end;
-        raw_tokens.push(next_match.as_str());
-        s = &s[end..];
-    }
-    let mut tokens: Vec<Token> = vec![];
-    for raw in raw_tokens { 
-        let token = match raw {
-            "+" => Token::BinaryOp(ops::BinaryOp::Add),
-            "-" => Token::BinaryOp(ops::BinaryOp::Sub),
-            "*" => Token::BinaryOp(ops::BinaryOp::Mul),
-            "/" => Token::BinaryOp(ops::BinaryOp::Div),
-            "%" => Token::BinaryOp(ops::BinaryOp::Mod),
-            "//" => Token::BinaryOp(ops::BinaryOp::Frac),
-            "^" => Token::BinaryOp(ops::BinaryOp::Power),
-            "==" => Token::BinaryOp(ops::BinaryOp::Equal),
-            "!=" => Token::BinaryOp(ops::BinaryOp::NotEqual),
-            ">" => Token::BinaryOp(ops::BinaryOp::Greater),
-            "<" => Token::BinaryOp(ops::BinaryOp::Less),
-            ">=" => Token::BinaryOp(ops::BinaryOp::GreaterEqual),
-            "<=" => Token::BinaryOp(ops::BinaryOp::LessEqual),
-            "=" => Token::Assign,
-            "+=" => Token::AssignOp(ops::BinaryOp::Add),
-            "-=" => Token::AssignOp(ops::BinaryOp::Sub),
-            "*=" => Token::AssignOp(ops::BinaryOp::Mul),
-            "/=" => Token::AssignOp(ops::BinaryOp::Div),
-            "%=" => Token::AssignOp(ops::BinaryOp::Mod),
-            "(" => Token::LParen,
-            ")" => Token::RParen,
-            "," => Token::Comma,
-            ";" => Token::Semicolon,
-            ":" => Token::Colon,
-            "true" => Token::True,
-            "false" => Token::False,
-            token => if let Some(nstr) = IS_NUMBER.find_at(token, 0) {
-                if nstr.start() == 0 {
-                    let nstr = nstr.as_str();
-                    let last_len = nstr.chars().last().unwrap().to_string().len();
-                    if nstr == "i" {
-                        Token::Imaginary(1.)
-                    } else if let Ok(n) = nstr.parse::<i64>() {
-                        Token::Integer(n)
-                    } else if let Ok(n) = nstr.parse::<f64>() {
-                        Token::Float(n)
-                    } else if let Ok(n) = nstr[..nstr.len()-last_len].parse::<f64>() {
-                        if &nstr[nstr.len()-last_len..] == "i" {
-                            Token::Imaginary(n)
-                        } else {
-                            return Err(TokenizeError::InvalidNumber(nstr.to_owned()))
-                        }
-                    } else {
-                        return Err(TokenizeError::InvalidNumber(nstr.to_owned()))
-                    }
-                } else if let Some(ident) = IS_IDENT.find(token) {
-                    Token::Identifier(ident.as_str().to_owned())
-                } else if let Some(s) = IS_STR.find(token) {
-                    Token::Str(parse_str(&s.as_str())?)
+        let end;
+        if let Some(next) = IS_IDENT.find(s) {
+            if next.start() == 0 {
+                let end = next.end();
+                let st = next.as_str();
+                if st == "i" {
+                    tokens.push(Token::Imaginary(1.));
+                } else if st == "true" {
+                    tokens.push(Token::True);
+                } else if st == "false" {
+                    tokens.push(Token::False);
                 } else {
-                    return Err(TokenizeError::UnknownToken(token.to_owned()))
+                    tokens.push(Token::Identifier(st.to_owned()))
                 }
-            } else if let Some(ident) = IS_IDENT.find(token) {
-                Token::Identifier(ident.as_str().to_owned())
-            } else if let Some(s) = IS_STR.find(token) {
-                Token::Str(parse_str(&s.as_str())?)
-            } else {
-                return Err(TokenizeError::UnknownToken(token.to_owned()))
+                idx += end;
+                s = &s[end..];
+                continue
             }
-        };
-        tokens.push(token);
+        } 
+        if let Some(next) = IS_NUMBER.find(s) {
+            if next.start() == 0 {
+                let end = next.end();
+                let nstr = next.as_str();
+                let last_len = nstr.chars().last().unwrap().to_string().len();
+                if let Ok(n) = nstr.parse::<i64>() {
+                    tokens.push(Token::Integer(n))
+                } else if let Ok(n) = nstr.parse::<f64>() {
+                    tokens.push(Token::Float(n))
+                } else if let Ok(n) = nstr[..nstr.len()-last_len].parse::<f64>() {
+                    if &nstr[nstr.len()-last_len..] == "i" {
+                        tokens.push(Token::Imaginary(n))
+                    } else {
+                        return Err(TokenizeError::InvalidNumber(idx, nstr.to_owned()))
+                    }
+                } else {
+                    return Err(TokenizeError::InvalidNumber(idx, nstr.to_owned()))
+                }
+                idx += end;
+                s = &s[end..];
+                continue
+            }
+        } 
+        if let Some(next) = IS_STR.find(s) {
+            if next.start() == 0 {
+                let end = next.end();
+                let st = next.as_str();
+                tokens.push(Token::Str(parse_str(&st)?));
+                idx += end;
+                s = &s[end..];
+                continue
+            }
+        } 
+        if let Some(next) = IS_OP.find(s) {
+            if next.start() == 0 {
+                end = next.end();
+                let op = next.as_str();
+                let token = match op {
+                    "+" => Token::BinaryOp(ops::BinaryOp::Add),
+                    "-" => Token::BinaryOp(ops::BinaryOp::Sub),
+                    "*" => Token::BinaryOp(ops::BinaryOp::Mul),
+                    "/" => Token::BinaryOp(ops::BinaryOp::Div),
+                    "%" => Token::BinaryOp(ops::BinaryOp::Mod),
+                    "//" => Token::BinaryOp(ops::BinaryOp::Frac),
+                    "^" => Token::BinaryOp(ops::BinaryOp::Power),
+                    "==" => Token::BinaryOp(ops::BinaryOp::Equal),
+                    "!=" => Token::BinaryOp(ops::BinaryOp::NotEqual),
+                    ">" => Token::BinaryOp(ops::BinaryOp::Greater),
+                    "<" => Token::BinaryOp(ops::BinaryOp::Less),
+                    ">=" => Token::BinaryOp(ops::BinaryOp::GreaterEqual),
+                    "<=" => Token::BinaryOp(ops::BinaryOp::LessEqual),
+                    "=" => Token::Assign,
+                    "+=" => Token::AssignOp(ops::BinaryOp::Add),
+                    "-=" => Token::AssignOp(ops::BinaryOp::Sub),
+                    "*=" => Token::AssignOp(ops::BinaryOp::Mul),
+                    "/=" => Token::AssignOp(ops::BinaryOp::Div),
+                    "%=" => Token::AssignOp(ops::BinaryOp::Mod),
+                    "(" => Token::LParen,
+                    ")" => Token::RParen,
+                    "," => Token::Comma,
+                    ";" => Token::Semicolon,
+                    ":" => Token::Colon,
+                    _ => unreachable!()
+                };
+                tokens.push(token);
+                idx += end;
+                s = &s[end..];
+                continue
+            }
+        }
+        return Err(TokenizeError::Unexpected(idx, s.chars().next().unwrap()))
     }
     Ok(tokens)
 }

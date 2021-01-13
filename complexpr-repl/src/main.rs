@@ -34,7 +34,7 @@ fn main() {
                 match result {
                     Ok(Value::Void) => (),
                     Ok(value) => {
-                        println!("{}", value);
+                        println!("{:?}", value);
                         ctx.insert("_".to_owned(), value);
                     },
                     Err(e) => println!("{}{}Error: {}{}", RESET, ERROR, RESET, e)

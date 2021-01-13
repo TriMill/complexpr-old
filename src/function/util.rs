@@ -11,7 +11,9 @@ lazy_static::lazy_static! {
         ctx.insert_function("fold".to_owned(), &fold);
         ctx.insert_function("rev".to_owned(), &rev);
         ctx.insert_function("filter".to_owned(), &filter);
+        ctx.insert_function("sort".to_owned(), &sort);
         ctx.insert_function("index".to_owned(), &index);
+        ctx.insert_function("slice".to_owned(), &slice);
         ctx.insert_function("apply".to_owned(), &apply);
         ctx.insert_function("len".to_owned(), &len);
         ctx.insert_function("chars".to_owned(), &chars);
@@ -19,6 +21,7 @@ lazy_static::lazy_static! {
         ctx.insert_function("first".to_owned(), &first);
         ctx.insert_function("repeat".to_owned(), &repeat);
         ctx.insert_function("enumerate".to_owned(), &enumerate);
+        ctx.insert_function("zip".to_owned(), &zip);
         ctx.insert_function("iter".to_owned(), &iter);
         ctx.insert_function("enumiter".to_owned(), &enumiter);
         ctx.insert_function("or_else".to_owned(), &or_else);
@@ -26,6 +29,7 @@ lazy_static::lazy_static! {
         ctx.insert_function("loop".to_owned(), &fn_loop);
         ctx.insert_function("from_radix".to_owned(), &from_radix);
         ctx.insert_function("to_radix".to_owned(), &from_radix);
+        ctx.insert_function("exact_eq".to_owned(), &exact_eq);
         ctx
     };
 }
@@ -136,6 +140,45 @@ pub fn filter(args: Vec<Value>) -> Result {
     }
 }
 
+pub fn sort(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    match &args[0] {
+        Value::List(l) => {
+            let l: Vec<&Value> = sort_inner(l.iter().by_ref().collect());
+            Ok(Value::List(l.iter().map(|&x| x.clone()).collect()))
+        },
+        Value::Str(s) => {
+            let mut s2: Vec<char> = s.chars().collect();
+            s2.sort();
+            Ok(Value::Str(s2.into_iter().collect()))
+        },
+        _ => return Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
+    }
+}
+
+pub fn sort_inner(list: Vec<&Value>) -> Vec<&Value> {
+    if list.len() <= 1 {
+        return list
+    }
+    let pivot: &Value = list[0];
+    let mut before: Vec<&Value> = vec![];
+    let mut after: Vec<&Value> = vec![];
+    for v in list.into_iter().skip(1) {
+        if v >= pivot {
+            after.push(v);
+        } else {
+            before.push(v);
+        }
+    }
+    let mut res = sort_inner(before);
+    let after = sort_inner(after);
+    res.push(pivot);
+    for v in after {
+        res.push(v);
+    }
+    res
+}
+
 pub fn index(args: Vec<Value>) -> Result {
     use std::convert::TryInto;
     bound_args(args.len(), 2, 2)?;
@@ -162,6 +205,62 @@ pub fn index(args: Vec<Value>) -> Result {
     }
 }
 
+pub fn slice(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 3, 3)?;
+    let list = &args[0];
+    let idx1 = &args[1];
+    let idx2 = &args[2];
+    match (list, idx1, idx2) {
+        (Value::List(l), Value::Integer(a), Value::Integer(b)) => {
+            let len = l.len() as i64;
+            let mut a = *a;
+            let mut b = *b;
+            if a < 0 { a = len + a; }
+            if b < 0 { b = len + b; }
+            if a < 0 || a >= len {
+                return Err(EvalErrorKind::WrongArgValue(idx1.clone()).into())
+            }
+            if b < 0 || b >= len {
+                return Err(EvalErrorKind::WrongArgValue(idx2.clone()).into())
+            }
+            let a = a as usize;
+            let b = b as usize;
+            if a == b {
+                Ok(Value::List(vec![]))
+            } else if a < b {
+                Ok(Value::List(l[a..b].to_vec()))
+            } else {
+                Ok(Value::List(l[b..a].iter().rev().cloned().collect::<Vec<Value>>()))
+            }
+        },
+        (Value::Str(s), Value::Integer(a), Value::Integer(b)) => {
+            let len = s.len() as i64;
+            let mut a = *a;
+            let mut b = *b;
+            if a < 0 { a = len + a; }
+            if b < 0 { b = len + b; }
+            if a < 0 || a > len {
+                return Err(EvalErrorKind::WrongArgValue(idx1.clone()).into())
+            }
+            if b < 0 || b > len {
+                return Err(EvalErrorKind::WrongArgValue(idx2.clone()).into())
+            }
+            let a = a as usize;
+            let b = b as usize;
+            if a == b {
+                Ok(Value::Str(String::new()))
+            } else if a < b {
+                Ok(Value::Str(s[a..b].to_owned()))
+            } else {
+                Ok(Value::Str(s[b..a].chars().rev().collect::<String>()))
+            }
+        },
+        (_, Value::Integer(_), x) => Err(EvalErrorKind::WrongArgType(x.clone()).into()),
+        (Value::List(_), x, _) => Err(EvalErrorKind::WrongArgType(x.clone()).into()),
+        (Value::Str(_), x, _) => Err(EvalErrorKind::WrongArgType(x.clone()).into()),
+        (x,_,_) => Err(EvalErrorKind::WrongArgType(x.clone()).into())
+    }
+}
 
 pub fn apply(args: Vec<Value>) -> Result {
     bound_args(args.len(), 2, 2)?;
@@ -262,6 +361,27 @@ pub fn repeat(args: Vec<Value>) -> Result {
         (Value::List(_), x) | (Value::Str(_), x) => Err(EvalErrorKind::WrongArgType(x.clone()).into()),
         (x, _) => Err(EvalErrorKind::WrongArgType(x.clone()).into())
     }
+}
+
+pub fn zip(args: Vec<Value>) -> Result {
+    min_args(args.len(), 1)?;
+    let mut min_len = usize::MAX;
+    let mut lists = vec![];
+    for arg in args {
+        if let Value::List(l) = arg {
+            if l.len() < min_len {
+                min_len = l.len();
+            }
+            lists.push(l);
+        } else {
+            return Err(EvalErrorKind::WrongArgType(arg.clone()).into())
+        }
+    }
+    let mut res = vec![];
+    for i in 0..min_len {
+        res.push(Value::List(lists.iter().map(|l| l[i].clone()).collect()));
+    }
+    Ok(Value::List(res))
 }
 
 pub fn enumerate(args: Vec<Value>) -> Result {
@@ -392,4 +512,10 @@ fn format_radix(mut x: i64, radix: u32) -> String {
         result.push('-')
     }
     result.into_iter().rev().collect()
+}
+
+pub fn exact_eq(args: Vec<Value>) -> Result {
+    use std::mem::discriminant;
+    bound_args(args.len(), 2, 2)?;
+    Ok(Value::Bool(args[0] == args[1] && discriminant(&args[0]) == discriminant(&args[1])))
 }

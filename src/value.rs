@@ -7,7 +7,7 @@ pub type Complex = complex::Complex<f64>;
 pub type Ratio = rational::Ratio<i64>;
 pub type List = Vec<Value>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Value {
     Integer(i64),
     Float(f64),
@@ -510,9 +510,32 @@ impl std::fmt::Display for Value {
                 .collect::<Vec<String>>()
                 .join(", ")),
             Self::Str(s) => format!("{}", s),
+            Self::Function(_) => "<builtin function>".to_owned(),
+            Self::Lambda{args,..} => format!("<lambda function of {} args>", args.len()),
+            Self::Builtin(v) => {use std::fmt::Debug; v.fmt(f)?; return Ok(())},
+            Self::Void => "".to_owned()
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl std::fmt::Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Integer(n) => format!("{:?}", n),
+            Self::Float(n) => format!("{:?}", n),
+            Self::Complex(n) => format!("{:?}+{:?}i", n.re, n.im),
+            Self::Ratio(n) => format!("{:?}//{:?}", n.numer(), n.denom()),
+            Self::Bool(n) => n.to_string(),
+            Self::List(n) => 
+                format!("({})", n.iter()
+                .map(|x| format!("{:?}", x))
+                .collect::<Vec<String>>()
+                .join(", ")),
+            Self::Str(s) => format!("{:?}", s),
             Self::Function(f) => format!("{:?}", f),
             Self::Lambda{args,..} => format!("<function of {} args>", args.len()),
-            Self::Builtin(v) => {use std::fmt::Debug; v.fmt(f)?; return Ok(())},
+            Self::Builtin(v) => {v.fmt(f)?; return Ok(())},
             Self::Void => "<void>".to_owned()
         };
         write!(f, "{}", s)

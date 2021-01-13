@@ -11,4 +11,5 @@ members = ["complexpr-repl"]
 [dependencies]
 num = "0.3"
 regex = "1.4"
-lazy_static="1.4"
+lazy_static = "1.4"
+rand = "0.8"

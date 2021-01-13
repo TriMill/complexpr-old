@@ -26,8 +26,12 @@ lazy_static::lazy_static! {
         ctx.insert_function("rad2deg".to_owned(), &rad2deg);
         ctx.insert_function("factorial".to_owned(), &factorial);
         ctx.insert_function("solve".to_owned(), &solve);
+        ctx.insert_function("solve".to_owned(), &solve);
         ctx.insert_function("gamma".to_owned(), &gamma);
         ctx.insert_function("lambert_w".to_owned(), &lambert_w);
+        ctx.insert_function("random".to_owned(), &random);
+        ctx.insert_function("random_range".to_owned(), &random_range);
+        ctx.insert_function("random_choose".to_owned(), &random_choose);
         ctx.insert("pi".to_owned(), PI.clone());
         ctx.insert("e".to_owned(), E.clone());
         ctx.insert("inf".to_owned(), INF.clone());
@@ -254,15 +258,23 @@ pub fn round(args: Vec<Value>) -> Result {
     }
 }
 
-/// Calculates the GCD of two integers.
-/// Requires exactly two integer arguments, returns an integer.
+/// Calculates the GCD of some integers.
+/// Requires one or more integer arguments, returns an integer.
 pub fn gcd(args: Vec<Value>) -> Result {
-    bound_args(args.len(), 2, 2)?;
-    match (&args[0], &args[1]) {
-        (Value::Integer(u), Value::Integer(v)) => Ok(Value::Integer(gcd_inner(u.abs(), v.abs()))),
-        (Value::Integer(_), x) => Err(EvalErrorKind::WrongArgType(x.clone()).into()),
-        (x, _) => Err(EvalErrorKind::WrongArgType(x.clone()).into())
+    min_args(args.len(), 1)?;
+    let mut ints = vec![];
+    for arg in args {
+        if let Value::Integer(n) = arg {
+            ints.push(n);
+        } else {
+            return Err(EvalErrorKind::WrongArgType(arg.clone()).into())
+        }
     }
+    let mut u = ints[0];
+    for v in &ints[1..] {
+        u = gcd_inner(u, *v);
+    }
+    Ok(Value::Integer(u))
 }
 
 fn gcd_inner(mut u: i64, mut v: i64) -> i64 {
@@ -443,3 +455,49 @@ pub fn solve(args: Vec<Value>) -> Result {
     Ok(res)
 }
 
+pub fn random(args: Vec<Value>) -> Result {
+    max_args(args.len(), 0)?;
+    Ok(Value::Float(rand::random()))
+}
+
+pub fn random_range(args: Vec<Value>) -> Result {
+    use rand::Rng;
+    bound_args(args.len(), 1, 2)?;
+    if args.len() == 1 {
+        if let Value::Integer(max) = &args[0] {
+            if max <= &0 {
+                return Ok(Value::Void)
+            }
+            Ok(Value::Integer(rand::thread_rng().gen_range(0..*max)))
+        } else {
+            Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
+        }
+    } else {
+        if let Value::Integer(min) = &args[0] {
+            if let Value::Integer(max) = &args[1] {
+                if min >= max {
+                    return Ok(Value::Void)
+                }
+                Ok(Value::Integer(rand::thread_rng().gen_range(*min..*max)))
+            } else {
+                Err(EvalErrorKind::WrongArgType(args[1].clone()).into())
+            }
+        } else {
+            Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
+        }
+    }
+}
+
+pub fn random_choose(args: Vec<Value>) -> Result {
+    use rand::Rng;
+    bound_args(args.len(), 1, 1)?;
+    if let Value::List(l) = &args[0] {
+        if l.len() == 0 {
+            return Ok(Value::Void)
+        }
+        let idx = rand::thread_rng().gen_range(0..l.len());
+        Ok(l[idx].clone())
+    } else {
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
+    }
+}
