@@ -1,0 +1,1 @@
+(readln() == "0")(:println(0), :loop(:(print(1);1)))()

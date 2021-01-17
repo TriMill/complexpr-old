@@ -1,0 +1,4 @@
+print("Limit: ");
+lim = from_radix(readln(), 10);
+list = filter(range(2, lim+1), n:(len(factors(n)) == 1));
+println("Result: ", list);

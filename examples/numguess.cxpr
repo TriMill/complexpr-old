@@ -1,0 +1,10 @@
+n = random_range(100);
+println("Guess a number from 0 to 99");
+loop(:(
+	print("> ");
+	guess = from_radix(readln(), 10);
+	(guess < n)(:println("Too low"), :(;))();
+	(guess > n)(:println("Too high"), :(;))();
+	(guess == n)((;), 1)
+));
+println("Correct!");

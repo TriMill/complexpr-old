@@ -56,6 +56,7 @@ impl Token {
             BinaryOp(ops::BinaryOp::Add) 
                 | BinaryOp(ops::BinaryOp::Sub) => 70,
             BinaryOp(ops::BinaryOp::Mul) 
+                | BinaryOp(ops::BinaryOp::Mod) 
                 | BinaryOp(ops::BinaryOp::Div) 
                 | BinaryOp(ops::BinaryOp::Frac) => 60,
             BinaryOp(ops::BinaryOp::Power) => 40,

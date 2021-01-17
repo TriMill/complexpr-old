@@ -29,9 +29,6 @@ lazy_static::lazy_static! {
         ctx.insert_function("solve".to_owned(), &solve);
         ctx.insert_function("gamma".to_owned(), &gamma);
         ctx.insert_function("lambert_w".to_owned(), &lambert_w);
-        ctx.insert_function("random".to_owned(), &random);
-        ctx.insert_function("random_range".to_owned(), &random_range);
-        ctx.insert_function("random_choose".to_owned(), &random_choose);
         ctx.insert("pi".to_owned(), PI.clone());
         ctx.insert("e".to_owned(), E.clone());
         ctx.insert("inf".to_owned(), INF.clone());
@@ -455,49 +452,3 @@ pub fn solve(args: Vec<Value>) -> Result {
     Ok(res)
 }
 
-pub fn random(args: Vec<Value>) -> Result {
-    max_args(args.len(), 0)?;
-    Ok(Value::Float(rand::random()))
-}
-
-pub fn random_range(args: Vec<Value>) -> Result {
-    use rand::Rng;
-    bound_args(args.len(), 1, 2)?;
-    if args.len() == 1 {
-        if let Value::Integer(max) = &args[0] {
-            if max <= &0 {
-                return Ok(Value::Void)
-            }
-            Ok(Value::Integer(rand::thread_rng().gen_range(0..*max)))
-        } else {
-            Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
-        }
-    } else {
-        if let Value::Integer(min) = &args[0] {
-            if let Value::Integer(max) = &args[1] {
-                if min >= max {
-                    return Ok(Value::Void)
-                }
-                Ok(Value::Integer(rand::thread_rng().gen_range(*min..*max)))
-            } else {
-                Err(EvalErrorKind::WrongArgType(args[1].clone()).into())
-            }
-        } else {
-            Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
-        }
-    }
-}
-
-pub fn random_choose(args: Vec<Value>) -> Result {
-    use rand::Rng;
-    bound_args(args.len(), 1, 1)?;
-    if let Value::List(l) = &args[0] {
-        if l.len() == 0 {
-            return Ok(Value::Void)
-        }
-        let idx = rand::thread_rng().gen_range(0..l.len());
-        Ok(l[idx].clone())
-    } else {
-        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
-    }
-}

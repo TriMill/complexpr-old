@@ -24,12 +24,15 @@ lazy_static::lazy_static! {
         ctx.insert_function("zip".to_owned(), &zip);
         ctx.insert_function("iter".to_owned(), &iter);
         ctx.insert_function("enumiter".to_owned(), &enumiter);
+        ctx.insert_function("seq".to_owned(), &seq);
         ctx.insert_function("or_else".to_owned(), &or_else);
         ctx.insert_function("and_then".to_owned(), &and_then);
         ctx.insert_function("loop".to_owned(), &fn_loop);
         ctx.insert_function("from_radix".to_owned(), &from_radix);
         ctx.insert_function("to_radix".to_owned(), &from_radix);
         ctx.insert_function("exact_eq".to_owned(), &exact_eq);
+        ctx.insert_function("ord".to_owned(), &ord);
+        ctx.insert_function("chr".to_owned(), &chr);
         ctx
     };
 }
@@ -428,6 +431,23 @@ pub fn enumiter(args: Vec<Value>) -> Result {
     }
 }
 
+pub fn seq(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 3, 3)?;
+    let func = &args[0];
+    let init = &args[1];
+    if let Value::Integer(n) = args[2] {
+        let mut val = init.clone();
+        let mut res = vec![val.clone()];
+        for _ in 0..(n-1) {
+            val = func.eval(vec![val])?;
+            res.push(val.clone())
+        }
+        Ok(Value::List(res))
+    } else {
+        Err(EvalErrorKind::WrongArgType(args[2].clone()).into())
+    }
+}
+
 pub fn or_else(args: Vec<Value>) -> Result {
     bound_args(args.len(), 2, 2)?;
     match &args[0] {
@@ -518,4 +538,35 @@ pub fn exact_eq(args: Vec<Value>) -> Result {
     use std::mem::discriminant;
     bound_args(args.len(), 2, 2)?;
     Ok(Value::Bool(args[0] == args[1] && discriminant(&args[0]) == discriminant(&args[1])))
+}
+
+pub fn ord(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    if let Value::Str(s) = &args[0] {
+        if s.chars().count() != 1 { 
+            Err(EvalErrorKind::WrongArgValue(args[0].clone()).into())
+        } else {
+            Ok(Value::Integer(s.chars().next().unwrap() as i64))
+        }
+    } else {
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
+    }
+}
+
+pub fn chr(args: Vec<Value>) -> Result {
+    use std::convert::TryInto;
+    bound_args(args.len(), 1, 1)?;
+    if let Value::Integer(n) = args[0] {
+        if let Ok(n) = n.try_into() {
+            if let Some(c) = std::char::from_u32(n) {
+                Ok(Value::Str(String::from(c)))
+            } else {
+                Err(EvalErrorKind::WrongArgValue(args[0].clone()).into())
+            }
+        } else {
+            Err(EvalErrorKind::WrongArgValue(args[0].clone()).into())
+        }
+    } else {
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
+    }
 }

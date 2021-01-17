@@ -1,0 +1,1 @@
+loop(:(x=readln();println(x);x));

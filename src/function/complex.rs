@@ -134,7 +134,7 @@ pub fn all_roots(args: Vec<Value>) -> Result {
             let (r, theta) = c.to_polar();
             let res_r = r.powf(n_recip);
             let res = (0..*n)
-                .map(|k| (k as f64)*TAU/(*n as f64) + theta)
+                .map(|k| (k as f64)/(*n as f64)*TAU + theta)
                 .map(|t| Complex::new(
                         res_r*cos(t),
                         res_r*sin(t)))
@@ -148,11 +148,27 @@ pub fn all_roots(args: Vec<Value>) -> Result {
 }
 
 fn cos(n: f64) -> f64 {
-    let (cos, sin) = (n.cos(), n.sin());
-    0.5*cos + 0.5*cos.signum()*(1. - sin*sin).sqrt()
+    use std::f64::consts;
+    if n == 0. || n == consts::PI {
+        0.
+    } else if n == consts::FRAC_PI_2 {
+        1.
+    } else if n == 3.*consts::FRAC_PI_2 {
+        -1.
+    } else {
+        n.cos()
+    }
 }
 
 fn sin(n: f64) -> f64 {
-    let (cos, sin) = (n.cos(), n.sin());
-    0.5*sin + 0.5*sin.signum()*(1. - cos*cos).sqrt()
+    use std::f64::consts;
+    if n == consts::FRAC_PI_2 || n == 3.*consts::FRAC_PI_2 {
+        0.
+    } else if n == 0. {
+        1.
+    } else if n == consts::PI {
+        -1.
+    } else {
+        n.sin()
+    }
 }

@@ -4,6 +4,8 @@ pub mod num;
 pub mod types;
 pub mod util;
 pub mod complex;
+#[cfg(feature = "random")]
+pub mod random;
 pub mod io;
 use crate::Value;
 use std::sync::Arc;

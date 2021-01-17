@@ -8,8 +8,12 @@ license = "GPL-3"
 [workspace]
 members = ["complexpr-repl"]
 
+[features]
+default = ["random"]
+random = ["rand"]
+
 [dependencies]
 num = "0.3"
 regex = "1.4"
 lazy_static = "1.4"
-rand = "0.8"
+rand = { version = "0.8", optional = true }

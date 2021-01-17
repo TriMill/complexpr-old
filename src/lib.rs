@@ -84,6 +84,10 @@ lazy_static! {
         for (k, v) in function::complex::CTX_ALL.iter() {
             ctx.insert(k.to_owned(), v.clone());
         }
+        #[cfg(feature = "random")]
+        for (k, v) in function::random::CTX_ALL.iter() {
+            ctx.insert(k.to_owned(), v.clone());
+        }
         ctx
     };
     static ref FULL_CONTEXT: Context = {
