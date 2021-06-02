@@ -59,4 +59,4 @@ Other:
 ## It's not a bug, it's a feature!
 Function calls where the only argument is a list "unpack" that list into arguments. For example: `foo(1, 2, 3)` is equivalent to `foo((1, 2, 3))`. This can be prevented by adding a comma at the end of the function arguments (`foo((1,2,3),)`
 
-Lambda [expressions](expressions) cannot directly call themselves, even when assigned to a variable. For example, `foo = x:foo(x)` fails on call because `foo` is unset. This can be circumvented by having the function take another function as an argument (`foo = (bar,x):bar(x)`) and then creating a second function that calls the first with itself (`real_foo = x:foo(foo, x)`)
+Lambda [expressions](expressions) cannot directly call themselves, even when assigned to a variable. For example, `foo = x:foo(x)` fails on call because `foo` is unset. It is usually better to use a builtin function for this (`loop`, `iter`, `seq`, etc). If needed, however, this can be circumvented by having the function take another function as an argument (`foo = (bar,x):bar(x)`) and then creating a second function that calls the first with itself (`real_foo = x:foo(foo, x)`)

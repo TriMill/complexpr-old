@@ -52,9 +52,11 @@ pub fn compile(expr: &str) -> Result<Node, Error> {
     match token::tokenize(expr) {
         Err(e) => Err(Error::Tokenize(e)),
         Ok(tokens) => {
+            //println!("{:?}", tokens);
             match tree::gen_tree(tokens) {
                 Err(e) => Err(Error::Tree(e)),
                 Ok(n) => {
+                    //println!("{:?}", n);
                     Ok(n)
                 }
             }

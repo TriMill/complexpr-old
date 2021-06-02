@@ -1,0 +1,7 @@
+res = map(range(-11, 12), y:map(range(-41, 10), x:(
+	c = x*0.05 + y*0.1i;
+	z = iter(z:(z^2 + c), c, 30);
+	(norm_sq(z) < 4)("#", "+")
+)));
+print(fold(fold(res, (a,b):(a+("\n",)+b)), add));
+res = (;);

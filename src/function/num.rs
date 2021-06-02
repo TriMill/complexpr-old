@@ -81,7 +81,7 @@ pub fn max(args: Vec<Value>) -> Result {
 /// Requires exactly one real argument, returns a value of the same type.
 pub fn abs(args: Vec<Value>) -> Result {
     bound_args(args.len(), 1, 1)?;
-    use ::num::Signed;
+    use num_traits::Signed;
     match &args[0] {
         Value::Float(n) => Ok(Value::Float(n.abs())),
         Value::Integer(n) => Ok(Value::Integer(n.abs())),
@@ -179,7 +179,7 @@ pub fn ln(args: Vec<Value>) -> Result {
 /// Requires exactly one numerical argument, returns a value of the same type.
 pub fn signum(args: Vec<Value>) -> Result {
     bound_args(args.len(), 1, 1)?;
-    use ::num::Signed;
+    use num_traits::Signed;
     match args[0] {
         Value::Integer(n) => Ok(Value::Integer(n.signum())),
         Value::Float(n) => Ok(Value::Float(n.signum())),

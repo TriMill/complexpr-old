@@ -1,0 +1,8 @@
+n = from_radix(readln(), 10);
+iter_while(x:(
+	print(x, " ");
+	(x % 2 == 0)(to_int(x/2), 3*x+1)
+), n, x:(
+	x > 1
+));
+println();

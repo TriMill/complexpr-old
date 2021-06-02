@@ -9,18 +9,33 @@ use rustyline::{
 };
 use std::sync::{Mutex, Arc};
 use std::borrow::Cow;
+use std::env;
+use std::io;
 
 const GOOD: &str = "\x1b[92m";
 const ERROR: &str = "\x1b[91m";
 const PROMPT: &str = "\x1b[94m";
 const RESET: &str = "\x1b[0m";
 
+const HISTORY_PATH_VAR: &str = "COMPLEXPR_HISTORY";
+
 fn main() {
+    let histpath = env::var(HISTORY_PATH_VAR);
     let ctx = Arc::new(Mutex::new(ctx_full()));
     println!("Use {}exit(){} or press {}Ctrl+D{} to exit",
         PROMPT, RESET, PROMPT, RESET);
     let mut rl = Editor::<CHelper>::new();
     rl.set_helper(Some(CHelper{ctx: ctx.clone()}));
+    rl.history_mut().set_max_len(10000);
+    if let Ok(s) = &histpath {
+        match rl.load_history(s) {
+            Ok(()) => (),
+            Err(ReadlineError::Io(e)) => if e.kind() == io::ErrorKind::NotFound {
+                std::fs::File::create(s).unwrap();
+            },
+            Err(e) => panic!(e)
+        }
+    }
     // prevent lag later due to lazy_static
     eval("1", &mut ctx.lock().unwrap()).unwrap();
     loop {
@@ -30,6 +45,9 @@ fn main() {
                 let mut ctx = ctx.lock().unwrap();
                 let line = line.as_str();
                 rl.add_history_entry(line);
+                if let Ok(s) = &histpath {
+                    rl.save_history(s).unwrap();
+                }
                 let result = eval(&line, &mut ctx);
                 match result {
                     Ok(Value::Void) => (),
@@ -49,6 +67,9 @@ fn main() {
                 println!("Error: {:?}", e);
             }
         }
+    }
+    if let Ok(s) = &histpath {
+        rl.save_history(s).unwrap();
     }
 }
 

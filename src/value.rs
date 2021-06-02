@@ -1,10 +1,10 @@
-use num::rational;
-use num::complex;
+use num_rational;
+use num_complex;
 use std::ops::{Add, Sub, Mul, Div, Rem, Neg};
 use std::cmp::Ordering;
 use crate::function::{self, Function, EvalError, EvalErrorKind};
-pub type Complex = complex::Complex<f64>;
-pub type Ratio = rational::Ratio<i64>;
+pub type Complex = num_complex::Complex<f64>;
+pub type Ratio = num_rational::Ratio<i64>;
 pub type List = Vec<Value>;
 
 #[derive(Clone)]
@@ -116,9 +116,9 @@ impl PartialOrd<Value> for Value {
             (Float(a), Integer(b)) => a.partial_cmp(&(*b as f64)),
             (Integer(a), Float(b)) => (*a as f64).partial_cmp(&b),
             (Float(a), Float(b)) => a.partial_cmp(&b),
-            (Ratio(a), Integer(b)) => Some(a.cmp(&num::rational::Ratio::from(*b))),
+            (Ratio(a), Integer(b)) => Some(a.cmp(&num_rational::Ratio::from(*b))),
             (Ratio(a), Float(b)) => r2f64(a).partial_cmp(&b),
-            (Integer(a), Ratio(b)) => Some(num::rational::Ratio::from(*a).cmp(&b)),
+            (Integer(a), Ratio(b)) => Some(num_rational::Ratio::from(*a).cmp(&b)),
             (Float(a), Ratio(b)) => a.partial_cmp(&r2f64(b)),
             (Ratio(a), Ratio(b)) => Some(a.cmp(b)),
             (Bool(a), Bool(b)) => Some(a.cmp(b)),
@@ -133,7 +133,7 @@ impl PartialOrd<Value> for Value {
 impl PartialEq<Value> for Value {
     fn eq(&self, other: &Self) -> bool {
         use Value::*;
-        use num::Zero;
+        use num_traits::Zero;
         let sorted = sort(self, other);
         match (sorted.0, sorted.1) {
             (Integer(a), Integer(b)) => a == b,
@@ -142,7 +142,7 @@ impl PartialEq<Value> for Value {
             (Integer(a), Complex(b)) => b.re == (*a as f64) && b.im.is_zero(),
             (Float(a), Complex(b)) => b.re == *a && b.im.is_zero(),
             (Complex(a), Complex(b)) => a == b,
-            (Integer(a), Ratio(b)) => num::rational::Ratio::new(*a, 1) == *b,
+            (Integer(a), Ratio(b)) => num_rational::Ratio::new(*a, 1) == *b,
             (Float(a), Ratio(b)) => *a == r2f64(b),
             (Complex(a), Ratio(b)) => a.re == r2f64(b) && a.im.is_zero(),
             (Ratio(a), Ratio(b)) => a == b,
@@ -199,9 +199,9 @@ impl Sub<Value> for Value {
             (Float(a), Complex(b)) => Ok(Complex(mul.1*(a - b))),
             (Complex(a), Complex(b)) => Ok(Complex(mul.1*(a - b))),
             (Integer(a), Ratio(b)) => Ok(Ratio((b - a)*(-mul.0))),
-            (Float(a), Ratio(b)) => Ok(Float(mul.1*(a + r2f64(b)))),
-            (Complex(a), Ratio(b)) => Ok(Complex(mul.1*(a + r2f64(b)))),
-            (Ratio(a), Ratio(b)) => Ok(Ratio((a + b)*mul.0)),
+            (Float(a), Ratio(b)) => Ok(Float(mul.1*(a - r2f64(b)))),
+            (Complex(a), Ratio(b)) => Ok(Complex(mul.1*(a - r2f64(b)))),
+            (Ratio(a), Ratio(b)) => Ok(Ratio((a - b)*mul.0)),
             (_,_) => Err(EvalErrorKind::WrongOpArgTypes(self, rhs).into())
         }
     }
@@ -233,7 +233,7 @@ impl Div<Value> for Value {
     type Output = Result<Value, EvalError>;
     fn div(self, rhs: Value) -> Self::Output {
         use Value::*;
-        use num::Zero;
+        use num_traits::Zero;
         match (self, rhs) {
             (Integer(a), Integer(b)) => if b.is_zero() {
                 Err(EvalErrorKind::WrongArgValue(Integer(b)).into())
@@ -251,7 +251,7 @@ impl Div<Value> for Value {
             (Integer(a), Ratio(b)) => if b.is_zero() {
                 Err(EvalErrorKind::WrongArgValue(Ratio(b)).into())
             } else {
-                Ok(Ratio(num::rational::Ratio::<i64>::new(a,1)/b))
+                Ok(Ratio(num_rational::Ratio::<i64>::new(a,1)/b))
             },
             (Ratio(a), Integer(b)) => if b.is_zero() {
                 Err(EvalErrorKind::WrongArgValue(Integer(b)).into())
@@ -276,7 +276,7 @@ impl Rem<Value> for Value {
     type Output = Result<Value, EvalError>;
     fn rem(self, rhs: Value) -> Self::Output {
         use Value::*;
-        use num::Zero;
+        use num_traits::Zero;
         match (self, rhs) {
             (Integer(a), Integer(b)) => if b.is_zero() {
                 Err(EvalErrorKind::WrongArgValue(Integer(b)).into())
@@ -289,7 +289,7 @@ impl Rem<Value> for Value {
             (Integer(a), Ratio(b)) => if b.is_zero() {
                 Err(EvalErrorKind::WrongArgValue(Ratio(b)).into())
             } else {
-                Ok(Ratio(num::rational::Ratio::<i64>::new(a,1)%b))
+                Ok(Ratio(num_rational::Ratio::<i64>::new(a,1)%b))
             },
             (Ratio(a), Integer(b)) => if b.is_zero() {
                 Err(EvalErrorKind::WrongArgValue(Integer(b)).into())
@@ -343,9 +343,9 @@ impl Value {
             (Complex(a), Integer(b)) => Ok(Complex(a.powf(b as f64))),
             (Complex(a), Float(b)) => Ok(Complex(a.powf(b))),
             (Complex(a), Ratio(b)) => Ok(Complex(a.powf(r2f64(&b)))),
-            (Integer(a), Complex(b)) => Ok(Complex(num::Complex::from(a as f64).powc(b))),
-            (Float(a), Complex(b)) => Ok(Complex(num::Complex::from(a).powc(b))),
-            (Ratio(a), Complex(b)) => Ok(Complex(num::Complex::from(r2f64(&a)).powc(b))),
+            (Integer(a), Complex(b)) => Ok(Complex(num_complex::Complex::from(a as f64).powc(b))),
+            (Float(a), Complex(b)) => Ok(Complex(num_complex::Complex::from(a).powc(b))),
+            (Ratio(a), Complex(b)) => Ok(Complex(num_complex::Complex::from(r2f64(&a)).powc(b))),
             (Complex(a), Complex(b)) => Ok(Complex(a.powc(b))),
             (Bool(a), Bool(b)) => Ok(Bool(a ^ b)),
             (a,b) => Err(EvalErrorKind::WrongOpArgTypes(a, b).into())
@@ -354,17 +354,17 @@ impl Value {
 
     pub fn frac(self, rhs: Value) -> Result<Value, EvalError> {
         use Value::*;
-        use num::Zero;
+        use num_traits::Zero;
         match (self, rhs) {
             (Integer(a), Integer(b)) => if b.is_zero() {
                 Err(EvalErrorKind::WrongArgValue(Integer(b)).into())
             } else {
-                Ok(Ratio(num::rational::Ratio::new(a, b)))
+                Ok(Ratio(num_rational::Ratio::new(a, b)))
             },
             (Integer(a), Ratio(b)) => if b.is_zero() {
                 Err(EvalErrorKind::WrongArgValue(Ratio(b)).into())
             } else {
-                Ok(Ratio(num::rational::Ratio::<i64>::new(a,1)/b))
+                Ok(Ratio(num_rational::Ratio::<i64>::new(a,1)/b))
             },
             (Ratio(a), Integer(b)) => if b.is_zero() {
                 Err(EvalErrorKind::WrongArgValue(Integer(b)).into())

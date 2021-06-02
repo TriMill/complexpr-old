@@ -8,7 +8,7 @@ lazy_static! {
     static ref IS_OP: Regex 
         = Regex::new(r"^\(|\)|,|;|:|//|\^|<=?|>=?|!=|==|=|[+*\-/%]=?").unwrap();
     static ref IS_NUMBER: Regex
-        = Regex::new(r"^-?^\d+(\.\d*)?i?|-?\.\d+i?").unwrap();
+        = Regex::new(r"^\d+(\.\d*)?i?|\.\d+i?").unwrap();
     static ref IS_IDENT: Regex
         = Regex::new(r"^\$?[a-zA-Z_][a-zA-Z0-9_]*").unwrap();
     static ref IS_STR: Regex

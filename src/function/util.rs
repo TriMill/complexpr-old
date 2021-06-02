@@ -23,14 +23,17 @@ lazy_static::lazy_static! {
         ctx.insert_function("enumerate".to_owned(), &enumerate);
         ctx.insert_function("zip".to_owned(), &zip);
         ctx.insert_function("iter".to_owned(), &iter);
+        ctx.insert_function("iter_while".to_owned(), &iter_while);
         ctx.insert_function("enumiter".to_owned(), &enumiter);
         ctx.insert_function("seq".to_owned(), &seq);
         ctx.insert_function("or_else".to_owned(), &or_else);
         ctx.insert_function("and_then".to_owned(), &and_then);
         ctx.insert_function("loop".to_owned(), &fn_loop);
-        ctx.insert_function("from_radix".to_owned(), &from_radix);
-        ctx.insert_function("to_radix".to_owned(), &from_radix);
         ctx.insert_function("exact_eq".to_owned(), &exact_eq);
+        ctx.insert_function("from_radix".to_owned(), &from_radix);
+        ctx.insert_function("to_radix".to_owned(), &to_radix);
+        ctx.insert_function("hex".to_owned(), &hex);
+        ctx.insert_function("bin".to_owned(), &bin);
         ctx.insert_function("ord".to_owned(), &ord);
         ctx.insert_function("chr".to_owned(), &chr);
         ctx
@@ -416,6 +419,21 @@ pub fn iter(args: Vec<Value>) -> Result {
     }
 }
 
+pub fn iter_while(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 3, 3)?;
+    let func = &args[0];
+    let init = &args[1];
+    let test = &args[2];
+    let mut val = init.clone();
+    loop {
+        val = func.eval(vec![val.clone()])?;
+        if Value::Bool(false) == test.eval(vec![val.clone()])? {
+            break
+        }
+    }
+    Ok(val)
+}
+
 pub fn enumiter(args: Vec<Value>) -> Result {
     bound_args(args.len(), 3, 3)?;
     let func = &args[0];
@@ -494,6 +512,24 @@ pub fn from_radix(args: Vec<Value>) -> Result {
         }
     } else {
         Err(EvalErrorKind::WrongArgType(args[1].clone()).into())
+    }
+}
+
+pub fn hex(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    if let Value::Integer(s) = &args[0] {
+        Ok(Value::Str(format_radix(*s, 16u32)))
+    } else {
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
+    }
+}
+
+pub fn bin(args: Vec<Value>) -> Result {
+    bound_args(args.len(), 1, 1)?;
+    if let Value::Integer(s) = &args[0] {
+        Ok(Value::Str(format_radix(*s, 2u32)))
+    } else {
+        Err(EvalErrorKind::WrongArgType(args[0].clone()).into())
     }
 }
 
